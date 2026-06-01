@@ -12,7 +12,7 @@ Aplikasi web pelacak servis kendaraan berbasis **Next.js (App Router)** + **Supa
 
 - [Node.js](https://nodejs.org/) >= 20.x
 - Akun [Supabase](https://supabase.com/) (free tier cukup)
-- (Opsional) [Docker](https://docs.docker.com/get-docker/) >= 20.x untuk containerized frontend
+- (Opsional) [Docker](https://docs.docker.com/get-docker/) >= 20.x untuk containerized app
 
 ## Setup Supabase
 
@@ -26,11 +26,10 @@ Aplikasi web pelacak servis kendaraan berbasis **Next.js (App Router)** + **Supa
 ### Opsi 1: Development Lokal (Recommended)
 
 ```bash
-cd frontend
 npm install
 ```
 
-Buat `frontend/.env.local`:
+Buat `.env.local` di root:
 
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
@@ -46,7 +45,7 @@ Jalankan:
 npm run dev
 ```
 
-Frontend berjalan di http://localhost:3000.
+Aplikasi berjalan di http://localhost:3000.
 
 ### Opsi 2: Docker Compose
 
@@ -88,17 +87,33 @@ Aturan "nilai baru **lebih besar** dari pembacaan terakhir" ditegakkan oleh trig
 ## Project Structure
 
 ```
-├── frontend/
-│   ├── src/app/                 # Next.js App Router pages
-│   ├── src/components/          # Reusable UI components
-│   └── src/lib/                 # Supabase client & services, auth, types
+├── src/
+│   ├── app/                     # Next.js App Router pages
+│   ├── components/              # Reusable UI components
+│   └── lib/                     # Supabase client & services, auth, types
+├── public/                      # Static assets
 ├── supabase/
 │   ├── migrations/              # DDL + seed (jalankan di Supabase SQL Editor)
 │   └── rollback/                # Drop scripts
+├── next.config.ts
+├── package.json
+├── Dockerfile
+├── .dockerignore
 ├── docker-compose.yml
 ├── .env.example
-└── .env
+└── .env.local
 ```
+
+## Deploy ke Vercel
+
+1. Push repo ini ke GitHub.
+2. Import project di [Vercel](https://vercel.com/new) — preset **Next.js** akan auto-detect. Root directory: `./`. Build/install command biarkan default.
+3. Set Environment Variables (Production & Preview):
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `SUPABASE_SERVICE_ROLE_KEY` (mark **Sensitive**)
+   - `APP_ACCESS_CODE`, `APP_ACCESS_SUPABASE_EMAIL`, `APP_ACCESS_SUPABASE_PASSWORD` (semua **Sensitive**)
+4. Deploy. Catatan: `output: "standalone"` di `next.config.ts` aman — Vercel mengabaikan opsi tersebut (relevan hanya untuk Docker).
 
 ## Features
 

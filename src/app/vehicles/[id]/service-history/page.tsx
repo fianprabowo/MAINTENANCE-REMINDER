@@ -338,7 +338,7 @@ export default function ServiceHistoryPage() {
   /**
    * Swipe-to-delete: id dari record card yang sedang ter-slide terbuka. Hanya
    * satu yang boleh terbuka pada satu waktu — pola yang sama dengan halaman
-   * Overview (lihat `frontend/src/app/overview/page.tsx`).
+   * Overview (lihat `src/app/overview/page.tsx`).
    */
   const [openSwipeId, setOpenSwipeId] = useState<string | null>(null);
   /** Map id → deskripsi di-expand (object agar React selalu re-render). */

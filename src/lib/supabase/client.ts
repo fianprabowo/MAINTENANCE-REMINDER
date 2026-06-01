@@ -2,7 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 
 /**
  * Valid-looking fallbacks so `createClient` does not throw during `next build`
- * when env vars are unset. At runtime, set real values in `frontend/.env.local`.
+ * when env vars are unset. At runtime, set real values in `.env.local`.
  */
 const url =
   process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() ||
@@ -17,7 +17,7 @@ if (typeof window !== "undefined") {
     !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
   if (missing) {
     console.warn(
-      "[maintenance-reminder] Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in frontend/.env.local",
+      "[maintenance-reminder] Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local",
     );
   }
 }
@@ -29,7 +29,7 @@ export function assertSupabaseConfigured(): void {
   const k = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
   if (!u || !k) {
     throw new Error(
-      "Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to frontend/.env.local (see .env.example).",
+      "Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to .env.local (see .env.example).",
     );
   }
 }

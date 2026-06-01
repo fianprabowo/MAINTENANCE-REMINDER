@@ -1,0 +1,37 @@
+# Build artifacts & deps
+node_modules
+.next
+out
+dist
+
+# Env files (jangan ikutkan ke image; pakai docker-compose env injection)
+.env
+.env.*
+!.env.example
+
+# Git
+.git
+.gitignore
+
+# Editor / IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Project-specific: tidak perlu di runtime container
+supabase
+README.md
+docker-compose.yml
+Dockerfile
+.dockerignore
+.prettierrc
+.cursor
