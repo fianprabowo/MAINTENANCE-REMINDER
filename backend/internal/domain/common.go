@@ -35,6 +35,6 @@ var (
 	ErrInvalidCredential    = errors.New("invalid email/phone or password")
 	ErrUnauthorized         = errors.New("unauthorized")
 	ErrForbidden            = errors.New("forbidden")
-	ErrMileageMustIncrease  = errors.New("mileage must be greater than or equal to the latest recorded value")
+	ErrMileageMustIncrease  = errors.New("mileage must be strictly greater than the latest recorded value")
 	ErrEmailOrPhoneRequired = errors.New("email or phone is required")
 )

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -50,9 +50,38 @@ export default function ConfirmDialog({
 
   const isDanger = variant === "danger";
 
+  /**
+   * Backdrop dismiss. Native `<dialog>` mengirimkan click event ke dialog
+   * itu sendiri (`e.target === dialog`) ketika user klik di area backdrop —
+   * sedangkan klik di content akan target child element. Kita pakai
+   * `getBoundingClientRect()` untuk verifikasi tambahan karena beberapa
+   * browser inkonsisten saat dialog `display:flex`/grid.
+   *
+   * `onCancel` dipanggil agar konsumen bisa mem-block dismissal pada state
+   * tertentu (mis. saat ada operasi async yang sedang berjalan — overview &
+   * service-history sudah meng-guard dengan `if (deleting) return;`).
+   */
+  const handleBackdropClick = useCallback(
+    (e: React.MouseEvent<HTMLDialogElement>) => {
+      const dialog = dialogRef.current;
+      if (!dialog || e.target !== dialog) return;
+
+      const rect = dialog.getBoundingClientRect();
+      const insideContent =
+        rect.top <= e.clientY &&
+        e.clientY <= rect.top + rect.height &&
+        rect.left <= e.clientX &&
+        e.clientX <= rect.left + rect.width;
+
+      if (!insideContent) onCancel();
+    },
+    [onCancel],
+  );
+
   return (
     <dialog
       ref={dialogRef}
+      onClick={handleBackdropClick}
       className="fixed inset-0 z-[100] m-auto w-[min(85vw,320px)] rounded-3xl border-none bg-transparent p-0 backdrop:bg-black/40 backdrop:backdrop-blur-sm"
     >
       <div className="rounded-3xl bg-(--color-surface) p-6 shadow-xl">

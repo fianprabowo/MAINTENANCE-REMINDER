@@ -32,7 +32,14 @@
   --color-critical: #f87171;
 }
 
+/* Jangan pakai height:100% di html + overflow-y:auto di body — itu memutus scroll dokumen di Safari/Chrome mobile. */
+/* Pakai overflow-x: clip (bukan hidden): hidden memaksa axis lain jadi scrollport dan sering memutus scroll di mobile. */
+html {
+  overflow-x: clip;
+}
+
 body {
+  overflow-x: clip;
   background-color: var(--color-bg);
   color: var(--color-text);
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -70,4 +77,105 @@ select option {
   background-color: var(--color-surface);
   color: var(--color-text);
   padding: 8px;
+}
+
+/* Soft press on native controls (Tailwind `active:scale-*` on same node still wins when present). */
+@layer base {
+  :where(button, input[type="submit"], input[type="button"], input[type="reset"]):not(:disabled) {
+    transition-property: transform, opacity, background-color, border-color, color, box-shadow, filter;
+    transition-duration: 140ms;
+    transition-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
+  }
+
+  :where(button, input[type="submit"], input[type="button"], input[type="reset"]):not(:disabled):active {
+    transform: scale(0.98);
+  }
+}
+
+@keyframes input-err-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-6px);
+  }
+  40% {
+    transform: translateX(6px);
+  }
+  60% {
+    transform: translateX(-4px);
+  }
+  80% {
+    transform: translateX(4px);
+  }
+}
+
+.input-err-shake {
+  animation: input-err-shake 0.42s ease-in-out;
+}
+
+/* ---------------------------------------------------------------------------
+ * Notification bell — gentle pendulum swing used by the unread-toast headline.
+ * Kept short + low-amplitude so it draws attention without becoming annoying;
+ * we also pause it under `prefers-reduced-motion`.
+ * ------------------------------------------------------------------------- */
+@keyframes bell-swing {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  10% {
+    transform: rotate(-12deg);
+  }
+  20% {
+    transform: rotate(10deg);
+  }
+  30% {
+    transform: rotate(-8deg);
+  }
+  40% {
+    transform: rotate(6deg);
+  }
+  50% {
+    transform: rotate(-4deg);
+  }
+  60% {
+    transform: rotate(2deg);
+  }
+}
+
+.bell-swing {
+  animation: bell-swing 1.6s cubic-bezier(0.36, 0.07, 0.19, 0.97) 0.3s 1;
+  transform-origin: 50% 14%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bell-swing {
+    animation: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Soft accent halo for the unread-toast — a single radial-gradient pulse.
+ * Used as a layered background, not a transform, so it never affects the
+ * card's hit area / scroll behavior.
+ * ------------------------------------------------------------------------- */
+@keyframes toast-halo {
+  0% {
+    opacity: 0.55;
+    transform: scale(0.92);
+  }
+  60% {
+    opacity: 0.18;
+    transform: scale(1.15);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.3);
+  }
+}
+
+.toast-halo {
+  animation: toast-halo 2.4s ease-out 1 both;
 }

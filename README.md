@@ -4,10 +4,37 @@ A full-stack vehicle maintenance tracking application built with Go (Echo), Next
 
 ## Tech Stack
 
-- **Backend**: Go 1.25 + Echo v4 (Clean Architecture)
-- **Frontend**: Next.js 15 (App Router) + TailwindCSS v4
-- **Database**: MySQL 8.0
+- **Backend (opsional)**: Go 1.25 + Echo v4 (Clean Architecture) — folder `backend/` tetap ada; bisa tidak dijalankan jika memakai Supabase.
+- **Frontend**: Next.js 15 (App Router) + TailwindCSS v4 + **Supabase** (`@supabase/supabase-js`) untuk Auth & data.
+- **Database**: MySQL 8.0 (stack Docker/Go) **atau** PostgreSQL di **Supabase** (lihat bagian di bawah).
 - **Containerization**: Docker + Docker Compose
+
+## Frontend + Supabase (tanpa menjalankan backend Go)
+
+Next.js dapat dipakai **standalone** dengan [Supabase](https://supabase.com/) (Auth + Postgres + Row Level Security). Tidak perlu menjalankan API Go atau MySQL lokal untuk mode ini.
+
+1. Buat project baru di Supabase.
+2. Buka **SQL Editor** → jalankan seluruh isi file `supabase/migrations/001_maintenance_reminder.sql` (satu kali).
+3. **Authentication** → **Providers** → **Email**: untuk pengembangan lokal, Anda bisa menonaktifkan **Confirm email** agar user langsung aktif setelah signup (opsional).
+4. **Project Settings** → **API**: salin **Project URL** dan **anon public** key.
+5. Buat `frontend/.env.local`:
+
+   ```bash
+   NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+   ```
+
+6. Jalankan frontend:
+
+   ```bash
+   cd frontend
+   npm install
+   npm run dev
+   ```
+
+**Perilaku auth:** masuk memakai **email + password** (provider Email Supabase). Login hanya dengan nomor telepon tidak didukung di mode ini; nomor tetap bisa disimpan di profil lewat form registrasi (metadata).
+
+**Validasi mileage:** aturan “nilai baru **lebih besar** dari pembacaan terakhir” ditegakkan di Postgres (trigger Supabase). Frontend tidak memanggil API Go.
 
 ## Prerequisites
 
@@ -41,13 +68,15 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Tunggu sampai log menampilkan `server starting on :8080`, lalu buka:
+Tunggu sampai service siap, lalu buka:
 
 | Service  | URL                          |
 |----------|------------------------------|
 | Frontend | http://localhost:3000         |
-| Backend  | http://localhost:8080/api     |
+| Backend  | http://localhost:8080/api (opsional; UI Next tidak memakainya) |
 | MySQL    | localhost:3306               |
+
+Isi `.env` dengan `NEXT_PUBLIC_SUPABASE_*` dan `SUPABASE_SERVICE_ROLE_KEY` agar container **frontend** bisa auth + `/api/access`. Tanpa itu, halaman Next tidak akan terhubung ke data.
 
 Untuk menjalankan di background:
 
@@ -98,11 +127,13 @@ Cocok jika Anda ingin database terisolasi di container, sementara Go dan Next.js
 
    Sesuaikan `MYSQL_USER` / `MYSQL_PASSWORD` dengan yang ada di `.env` Anda.
 
-4. **Frontend** (terminal lain):
+4. **Frontend** (terminal lain) — pakai Supabase, **bukan** URL Go:
 
    ```bash
    cd frontend
-   export NEXT_PUBLIC_API_URL=http://localhost:8080/api
+   # salin dari Project Settings → API di Supabase (sudah di frontend/.env.local)
+   export NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
+   export NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
    npm run dev
    ```
 
@@ -148,20 +179,18 @@ go run ./cmd/server
 
 Backend berjalan di http://localhost:8080.
 
-#### 3. Frontend
+#### 3. Frontend (Supabase)
 
 Buka terminal baru:
 
 ```bash
 cd frontend
 
-# Install dependencies
 npm install
 
-# Set environment variable
-export NEXT_PUBLIC_API_URL=http://localhost:8080/api
+# Buat frontend/.env.local berisi NEXT_PUBLIC_SUPABASE_URL dan NEXT_PUBLIC_SUPABASE_ANON_KEY
+# (lihat bagian “Frontend + Supabase” di atas). Tidak ada variabel URL ke backend Go.
 
-# Jalankan development server
 npm run dev
 ```
 
@@ -189,7 +218,9 @@ Setelah pertama kali dijalankan, database otomatis di-seed dengan akun admin:
 | `APP_PORT`          | `8080`                             | Port backend                |
 | `JWT_SECRET`        | `change-me-to-a-strong-secret`     | Secret key untuk JWT        |
 | `JWT_EXPIRY_HOURS`  | `72`                               | Masa berlaku token (jam)    |
-| `NEXT_PUBLIC_API_URL` | `http://localhost:8080/api`      | URL backend dari frontend   |
+| `NEXT_PUBLIC_SUPABASE_URL` | —                         | URL project Supabase (frontend) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | —                    | Anon key Supabase (frontend) |
+| `SUPABASE_SERVICE_ROLE_KEY` | —                       | Hanya server Next (`/api/access`); jangan expose ke browser |
 
 ## Project Structure
 
@@ -206,7 +237,7 @@ Setelah pertama kali dijalankan, database otomatis di-seed dengan akun admin:
 ├── frontend/
 │   ├── src/app/                 # Next.js App Router pages
 │   ├── src/components/          # Reusable UI components
-│   └── src/lib/                 # API client, auth, types
+│   └── src/lib/                 # Supabase client & services, auth, types
 ├── docker-compose.yml
 ├── .env.example
 └── .env

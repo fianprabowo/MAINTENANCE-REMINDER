@@ -33,7 +33,7 @@ func (u *MileageUsecase) Add(vehicleID int64, userID int64, input AddMileageInpu
 	if err != nil && err != domain.ErrNotFound {
 		return nil, err
 	}
-	if latest != nil && input.Mileage < latest.Mileage {
+	if latest != nil && input.Mileage <= latest.Mileage {
 		return nil, domain.ErrMileageMustIncrease
 	}
 

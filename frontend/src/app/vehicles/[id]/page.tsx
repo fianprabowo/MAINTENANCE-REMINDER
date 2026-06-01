@@ -1,20 +1,36 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth";
-import { api } from "@/lib/api";
-import { MileageLog, VehicleDetail } from "@/lib/types";
-import StatusBadge from "@/components/StatusBadge";
-import { CardSkeleton, DetailSkeleton } from "@/components/LoadingSkeleton";
+import {
+  deleteMileageLog,
+  deleteVehicle,
+  fetchMileageHistory,
+  fetchVehicleDetail,
+} from "@/lib/supabase";
+import type { MileageLog, VehicleDetail } from "@/lib/types";
 import HistoryTimeline from "@/components/HistoryTimeline";
-import MileageChart from "@/components/MileageChart";
+import AddMileageModal from "@/components/AddMileageModal";
+import StatusBadge from "@/components/StatusBadge";
+import ConfirmDialog from "@/components/ConfirmDialog";
+import { DetailSkeleton } from "@/components/LoadingSkeleton";
 import { toast } from "sonner";
+
+const btnPress = "transition-all duration-200 active:scale-95";
+
+/**
+ * Initial + per-scroll page size for the mileage timeline. 10 keeps the
+ * cold-load DOM small (cheap parse + scroll smoothness on low-end
+ * devices) and still shows enough rows to convey "this is a list" on
+ * first paint.
+ */
+const HISTORY_PAGE_SIZE = 10;
 
 function TrashIcon({ className }: { className?: string }) {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
       <polyline points="3 6 5 6 21 6" />
       <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
       <line x1="10" y1="11" x2="10" y2="17" />
@@ -28,33 +44,76 @@ export default function VehicleDetailPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [detail, setDetail] = useState<VehicleDetail | null>(null);
-  const [historyLogs, setHistoryLogs] = useState<MileageLog[]>([]);
   const [loading, setLoading] = useState(true);
-  const [historyLoading, setHistoryLoading] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [mileageModalOpen, setMileageModalOpen] = useState(false);
-  const [mileageInput, setMileageInput] = useState("");
-  const [mileageSaving, setMileageSaving] = useState(false);
+  const [historyLogs, setHistoryLogs] = useState<MileageLog[]>([]);
+  // Pagination state for the timeline. We use cursor-based paging keyed
+  // on the OLDEST visible row's `created_at`. `hasMore` is conservative:
+  // we only assume more pages exist when the last fetch returned a full
+  // page (=PAGE_SIZE rows). One-shot false trigger is fine because the
+  // sentinel will simply unmount.
+  const [loadingMoreHistory, setLoadingMoreHistory] = useState(false);
+  const [hasMoreHistory, setHasMoreHistory] = useState(false);
+  // Pending delete target — drives ConfirmDialog open state and carries
+  // the row needed for both the user-facing message and the API call.
+  const [pendingDeleteMileage, setPendingDeleteMileage] = useState<MileageLog | null>(null);
+  const [deletingMileage, setDeletingMileage] = useState(false);
 
   const minRecordedMileage = detail?.latest_mileage?.mileage ?? 0;
 
   const refreshVehicleData = useCallback(async () => {
     if (!id) return;
-    try {
-      const [detailRes, histRes] = await Promise.all([
-        api.get<VehicleDetail>(`/vehicles/${id}`),
-        api.get<MileageLog[]>(`/vehicles/${id}/history?page=1&limit=50`),
-      ]);
-      if (detailRes.data) setDetail(detailRes.data);
-      setHistoryLogs(histRes.data || []);
-    } catch {
-      /* keep existing state on background refresh */
-    }
+    // Background refresh — preserve scroll-loaded state. If the user has
+    // already paged further (e.g. 30 rows visible), refetching only the
+    // first 10 would visually "lose" the lower entries until they re-
+    // scrolled. So we re-fetch up to whatever they've already loaded
+    // (capped at PAGE_SIZE on initial state).
+    setHistoryLogs((prev) => {
+      const fetchSize = Math.max(prev.length, HISTORY_PAGE_SIZE);
+      void Promise.allSettled([
+        fetchVehicleDetail(id as string),
+        fetchMileageHistory(id as string, { limit: fetchSize }),
+      ]).then(([detailRes, logsRes]) => {
+        if (detailRes.status === "fulfilled" && detailRes.value) {
+          setDetail(detailRes.value);
+        }
+        if (logsRes.status === "fulfilled") {
+          setHistoryLogs(logsRes.value);
+          // After a refresh we don't know if there's "more" beyond what
+          // we asked for — assume yes only when the slot is full.
+          setHasMoreHistory(logsRes.value.length === fetchSize);
+        }
+      });
+      return prev; // setState callback used purely to read latest length
+    });
   }, [id]);
 
+  const loadMoreHistory = useCallback(async () => {
+    if (!id || loadingMoreHistory || !hasMoreHistory) return;
+    const cursor = historyLogs[historyLogs.length - 1]?.created_at;
+    if (!cursor) return;
+    setLoadingMoreHistory(true);
+    try {
+      const next = await fetchMileageHistory(id as string, {
+        limit: HISTORY_PAGE_SIZE,
+        before: cursor,
+      });
+      setHistoryLogs((prev) => [...prev, ...next]);
+      // If fewer rows came back than requested, we've hit the end.
+      setHasMoreHistory(next.length === HISTORY_PAGE_SIZE);
+    } catch {
+      // Soft fail: don't toast — user can scroll again to retry.
+      // Setting hasMore=true again means the sentinel will trigger on
+      // next intersection.
+    } finally {
+      setLoadingMoreHistory(false);
+    }
+  }, [id, loadingMoreHistory, hasMoreHistory, historyLogs]);
+
   useEffect(() => {
-    if (!authLoading && !user) router.replace("/login");
+    if (!authLoading && !user) router.replace("/access");
   }, [user, authLoading, router]);
 
   useEffect(() => {
@@ -63,29 +122,31 @@ export default function VehicleDetailPage() {
 
     const run = async () => {
       setLoading(true);
-      setHistoryLoading(true);
       try {
-        const detailRes = await api.get<VehicleDetail>(`/vehicles/${id}`);
+        // Initial cold load — fan out detail+history; both are independent.
+        // History is paginated (lazy-loaded on scroll) so we only ask for
+        // the first page here.
+        const [detailRes, logsRes] = await Promise.all([
+          fetchVehicleDetail(id as string),
+          fetchMileageHistory(id as string, { limit: HISTORY_PAGE_SIZE }).catch(
+            () => [] as MileageLog[],
+          ),
+        ]);
         if (cancelled) return;
-        if (detailRes.data) setDetail(detailRes.data);
-        else {
+        if (!detailRes) {
           router.replace("/dashboard");
           return;
         }
+        setDetail(detailRes);
+        setHistoryLogs(logsRes);
+        // If we got a full page back, there *might* be more — sentinel
+        // will probe. If less, we've already shown everything.
+        setHasMoreHistory(logsRes.length === HISTORY_PAGE_SIZE);
       } catch {
         if (!cancelled) router.replace("/dashboard");
         return;
       } finally {
         if (!cancelled) setLoading(false);
-      }
-
-      try {
-        const histRes = await api.get<MileageLog[]>(`/vehicles/${id}/history?page=1&limit=50`);
-        if (!cancelled) setHistoryLogs(histRes.data || []);
-      } catch {
-        if (!cancelled) setHistoryLogs([]);
-      } finally {
-        if (!cancelled) setHistoryLoading(false);
       }
     };
 
@@ -97,45 +158,72 @@ export default function VehicleDetailPage() {
 
   useEffect(() => {
     if (typeof window === "undefined" || loading || !detail) return;
-    if (window.location.hash === "#mileage-history") {
-      document.getElementById("mileage-history")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (window.location.hash === "#mileage-timeline") {
+      window.requestAnimationFrame(() => {
+        document.getElementById("mileage-timeline")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
     }
   }, [loading, detail]);
 
-  const openMileageModal = () => {
-    const current = detail?.latest_mileage?.mileage;
-    setMileageInput(current !== undefined ? String(current) : "");
-    setMileageModalOpen(true);
-  };
+  useEffect(() => {
+    const h = () => {
+      void refreshVehicleData();
+    };
+    window.addEventListener("mr:vehicle-data-changed", h);
+    return () => window.removeEventListener("mr:vehicle-data-changed", h);
+  }, [refreshVehicleData]);
 
-  const handleMileageModalSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const n = parseInt(mileageInput, 10);
-    if (Number.isNaN(n) || n < minRecordedMileage) {
-      toast.error(
-        minRecordedMileage > 0
-          ? `Mileage must be at least ${minRecordedMileage.toLocaleString()} km`
-          : "Enter a valid odometer reading",
-      );
-      return;
-    }
-    setMileageSaving(true);
+  const openMileageModal = useCallback(() => {
+    setMileageModalOpen(true);
+  }, []);
+
+  const requestDeleteMileage = useCallback((log: MileageLog) => {
+    // SwipeableRow already handed us intent — we route through the
+    // standard ConfirmDialog so the destructive step always carries
+    // explicit user confirmation (consistent with overview / reminder
+    // / service-history delete flows).
+    setPendingDeleteMileage(log);
+  }, []);
+
+  const cancelDeleteMileage = useCallback(() => {
+    if (deletingMileage) return; // guard mid-flight dismissal
+    setPendingDeleteMileage(null);
+  }, [deletingMileage]);
+
+  const confirmDeleteMileage = useCallback(async () => {
+    const target = pendingDeleteMileage;
+    if (!target || !id) return;
+    setDeletingMileage(true);
+
+    // Optimistic removal — keep the snapshot to roll back on error.
+    const previous = historyLogs;
+    setHistoryLogs((prev) => prev.filter((l) => l.id !== target.id));
+
     try {
-      await api.post<MileageLog>(`/vehicles/${id}/mileage`, { mileage: n });
-      toast.success("Mileage updated");
-      setMileageModalOpen(false);
-      await refreshVehicleData();
+      await deleteMileageLog(target.id, id as string);
+      // The DB trigger already recomputed vehicles.current_mileage_km.
+      // Broadcast so reminders/notifications/dashboard re-derive their
+      // status from the new max odometer reading.
+      window.dispatchEvent(new CustomEvent("mr:vehicle-data-changed"));
+      toast.success("Catatan KM dihapus");
+      // Refresh the detail card too — current KM may have changed if we
+      // just deleted the latest entry. Fire-and-forget; optimistic state
+      // already covers the timeline.
+      void refreshVehicleData();
+      setPendingDeleteMileage(null);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to update mileage");
+      // Rollback optimistic removal so the timeline reflects truth.
+      setHistoryLogs(previous);
+      toast.error(err instanceof Error ? err.message : "Gagal menghapus");
     } finally {
-      setMileageSaving(false);
+      setDeletingMileage(false);
     }
-  };
+  }, [pendingDeleteMileage, id, historyLogs, refreshVehicleData]);
 
   const handleDelete = async () => {
     setDeleting(true);
     try {
-      await api.delete(`/vehicles/${id}`);
+      await deleteVehicle(id as string);
       toast.success("Vehicle deleted");
       router.replace("/dashboard");
     } catch (err) {
@@ -147,6 +235,11 @@ export default function VehicleDetailPage() {
 
   if (authLoading || !user) return null;
 
+  const notes = detail?.vehicle.notes?.trim() ?? "";
+  const currentKm = detail?.latest_mileage?.mileage;
+  const reminderCount = detail?.reminders?.length ?? 0;
+  const kategori = detail?.motorcycle_category?.name_display?.replace(/^Motor\s/, "") ?? "—";
+
   return (
     <div className="flex min-h-screen flex-col">
       <main className="flex-1 px-5 pb-8 pt-5">
@@ -154,268 +247,378 @@ export default function VehicleDetailPage() {
           <DetailSkeleton />
         ) : (
           <>
-            <div className="mb-6 flex items-center justify-between">
+            {/* Top bar: back + delete icon */}
+            <div className="mb-5 flex items-center justify-between">
               <button
                 type="button"
                 onClick={() => router.push("/dashboard")}
-                className="text-sm font-semibold text-(--color-text-secondary) transition-colors hover:text-(--color-text)"
+                className={`rounded-lg px-1 py-0.5 text-sm font-semibold text-(--color-text-secondary) hover:text-(--color-text) ${btnPress}`}
               >
-                ← Back
+                ← Kembali
               </button>
 
               {!confirmDelete ? (
                 <button
+                  type="button"
                   onClick={() => setConfirmDelete(true)}
-                  className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-50 text-red-400 transition-colors hover:bg-red-100 hover:text-red-500 dark:bg-red-900/15 dark:text-red-400/70 dark:hover:bg-red-900/30 dark:hover:text-red-400"
-                  title="Delete vehicle"
+                  className={`flex h-9 w-9 items-center justify-center rounded-lg bg-red-50 text-red-500 hover:bg-red-100 dark:bg-red-900/15 dark:text-red-400 dark:hover:bg-red-900/30 ${btnPress}`}
+                  title="Hapus kendaraan"
+                  aria-label="Hapus kendaraan"
                 >
                   <TrashIcon className="h-5 w-5" />
                 </button>
               ) : (
                 <div className="flex items-center gap-2">
                   <button
+                    type="button"
                     onClick={() => setConfirmDelete(false)}
-                    className="rounded-xl bg-(--color-surface) px-3 py-2 text-xs font-semibold shadow-sm"
+                    className={`rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700 ${btnPress}`}
                   >
-                    Cancel
+                    Batal
                   </button>
                   <button
+                    type="button"
                     onClick={handleDelete}
                     disabled={deleting}
-                    className="rounded-xl bg-red-100 px-3 py-2 text-xs font-bold text-red-600 shadow-sm transition-colors hover:bg-red-200 disabled:opacity-50 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50"
+                    className={`rounded-lg bg-red-100 px-3 py-1.5 text-xs font-bold text-red-600 hover:bg-red-200 disabled:pointer-events-none disabled:opacity-50 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50 ${btnPress}`}
                   >
-                    {deleting ? "..." : "Confirm"}
+                    {deleting ? "…" : "Hapus"}
                   </button>
                 </div>
               )}
             </div>
 
-            <div className="mb-6 flex items-center gap-4">
-              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-(--color-surface) text-3xl shadow-sm">
-                {detail.vehicle.type === "car" ? "🚗" : "🏍️"}
+            {/* Header */}
+            <header className="mb-6 flex items-start gap-4">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-(--color-surface) text-2xl" aria-hidden>
+                {detail.vehicle.type === "motorcycle" ? "🏍️" : "🚗"}
               </div>
-              <div className="flex-1">
-                <h1 className="text-xl font-bold">{detail.vehicle.name}</h1>
-                <p className="text-sm text-(--color-text-secondary)">
-                  {detail.vehicle.brand} &middot; {detail.vehicle.year}
-                </p>
-              </div>
-              <StatusBadge status={detail.vehicle.status} />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <StatCard
-                icon="📏"
-                label="Current KM"
-                value={
-                  detail.latest_mileage
-                    ? `${detail.latest_mileage.mileage.toLocaleString()}`
-                    : "N/A"
-                }
-                onPress={openMileageModal}
-                hint="Tap to update"
-              />
-              <StatCard icon="⛽" label="Fuel Level" value={`${detail.vehicle.fuel_level}%`} />
-              <StatCard icon="🔧" label="Reminders" value={`${detail.reminders?.length || 0} active`} />
-              <StatCard icon="📋" label="Type" value={detail.vehicle.type} />
-            </div>
-
-            {detail.vehicle.notes && (
-              <div className="mt-4 rounded-2xl bg-(--color-surface) p-4">
-                <p className="text-xs font-semibold uppercase tracking-wider text-(--color-text-muted)">
-                  Notes
-                </p>
-                <p className="mt-1 text-sm">{detail.vehicle.notes}</p>
-              </div>
-            )}
-
-            <div className="mt-6 space-y-3">
-              <Link
-                href={`/vehicles/${id}/mileage`}
-                className="block w-full rounded-2xl bg-(--color-primary) py-4 text-center text-base font-bold text-white shadow-lg shadow-(--color-primary)/30 transition-all hover:brightness-110 active:scale-[0.98] active:brightness-90"
-              >
-                Add Mileage
-              </Link>
-              <Link
-                href={`/vehicles/${id}/reminder`}
-                className="block w-full rounded-2xl bg-(--color-surface) py-3.5 text-center text-sm font-semibold text-(--color-text) shadow-sm transition-all hover:shadow-md"
-              >
-                Reminders
-              </Link>
-            </div>
-
-            <section id="mileage-history" className="mt-8 scroll-mt-6 space-y-4">
-              <h2 className="text-sm font-bold uppercase tracking-wider text-(--color-text-muted)">
-                Mileage history
-              </h2>
-              {historyLoading ? (
-                <div className="space-y-4">
-                  <CardSkeleton />
-                  <CardSkeleton />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-start justify-between gap-3">
+                  <h1 className="truncate text-xl font-bold text-(--color-text)">{detail.vehicle.name}</h1>
+                  <StatusBadge status={detail.vehicle.status} />
                 </div>
-              ) : (
-                <>
-                  <div className="rounded-3xl bg-(--color-surface) p-5 shadow-sm">
-                    <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-(--color-text-muted)">
-                      Mileage trend
-                    </h3>
-                    <MileageChart logs={historyLogs} />
-                  </div>
-                  <div className="rounded-3xl bg-(--color-surface) p-5 shadow-sm">
-                    <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-(--color-text-muted)">
-                      Timeline
-                    </h3>
-                    <HistoryTimeline logs={historyLogs} />
-                  </div>
-                </>
-              )}
+                <p className="mt-1 text-sm text-(--color-text-secondary)">
+                  {detail.vehicle.brand} · {detail.vehicle.year}
+                </p>
+              </div>
+            </header>
+
+            {/* Ringkasan — 1 section, grid 2 kolom, card ringan */}
+            <section className="grid grid-cols-2 gap-3">
+              <StatCard
+                label="KM"
+                value={currentKm !== undefined ? currentKm.toLocaleString("id-ID") : "—"}
+                sub={currentKm !== undefined ? "odometer terkini" : "Ketuk untuk update"}
+                onPress={openMileageModal}
+                accent
+              />
+              <StatCard label="Fuel" value={`${detail.vehicle.fuel_level}%`} sub="level tangki" />
+              <StatCard label="Reminder" value={`${reminderCount}`} sub={reminderCount === 1 ? "aktif" : "aktif"} />
+              <StatCard label="Tipe" value={kategori} sub={detail.vehicle.type === "motorcycle" ? "motor" : "mobil"} />
             </section>
 
-            {detail.reminders && detail.reminders.length > 0 && (
-              <div className="mt-8">
-                <h2 className="mb-3 text-sm font-bold uppercase tracking-wider text-(--color-text-muted)">
-                  Service Reminders
+            {/* Action utama + sekunder */}
+            <section className="mt-5 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <Link
+                  href={`/vehicles/${id}/service-history`}
+                  className={`block rounded-xl bg-gray-100 py-3 text-center text-sm font-semibold text-gray-700 hover:bg-gray-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700 ${btnPress}`}
+                >
+                  Riwayat servis
+                </Link>
+                <Link
+                  href={`/vehicles/${id}/reminder`}
+                  className={`block rounded-xl bg-gray-100 py-3 text-center text-sm font-semibold text-gray-700 hover:bg-gray-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700 ${btnPress}`}
+                >
+                  Reminder
+                </Link>
+              </div>
+              <Link
+                href={`/vehicles/${id}/condition`}
+                className={`flex items-center justify-between rounded-xl bg-gradient-to-br from-emerald-50 to-sky-50 px-4 py-3.5 text-sm font-semibold text-(--color-text) ring-1 ring-emerald-200/60 hover:from-emerald-100 hover:to-sky-100 dark:from-emerald-500/10 dark:to-sky-500/10 dark:ring-emerald-500/20 dark:hover:from-emerald-500/15 dark:hover:to-sky-500/15 ${btnPress}`}
+              >
+                <span className="flex items-center gap-2.5">
+                  <span className="text-lg" aria-hidden>
+                    🩺
+                  </span>
+                  <span className="flex flex-col">
+                    <span>Kondisi part</span>
+                    <span className="text-[11px] font-normal text-(--color-text-secondary)">
+                      Cek umur tiap komponen
+                    </span>
+                  </span>
+                </span>
+                <span aria-hidden className="text-(--color-text-muted)">
+                  →
+                </span>
+              </Link>
+            </section>
+
+            {/* Timeline KM */}
+            <section
+              id="mileage-timeline"
+              className="mt-6 scroll-mt-24 rounded-xl bg-white p-4 shadow-sm ring-1 ring-(--color-border)/50 dark:bg-(--color-surface)"
+            >
+              <div className="mb-3 flex items-baseline justify-between">
+                <h2 className="text-[11px] font-bold uppercase tracking-wider text-(--color-text-muted)">
+                  Timeline kilometer
                 </h2>
-                <div className="space-y-3">
+                {historyLogs[0] ? (
+                  <span className="text-[11px] font-semibold text-(--color-text-muted)">
+                    Update terakhir · {formatRelative(historyLogs[0].created_at)}
+                  </span>
+                ) : null}
+              </div>
+              <HistoryTimeline logs={historyLogs} onDelete={requestDeleteMileage} />
+
+              {/* Lazy-load sentinel + status row.
+                  - Sentinel only renders when there *might* be more rows.
+                    IntersectionObserver fires loadMore on entering viewport.
+                  - Loading text shown while fetch in flight.
+                  - "Akhir riwayat" indicator shown once we've reached the
+                    end (>= page size of rows total). Tiny, low-emphasis.
+              */}
+              {hasMoreHistory ? (
+                <HistorySentinel
+                  onIntersect={() => void loadMoreHistory()}
+                  loading={loadingMoreHistory}
+                />
+              ) : historyLogs.length > HISTORY_PAGE_SIZE ? (
+                <p className="mt-3 text-center text-[10px] font-semibold uppercase tracking-wider text-(--color-text-muted)">
+                  Akhir riwayat
+                </p>
+              ) : null}
+            </section>
+
+            {/* Catatan — hanya jika ada */}
+            {notes ? (
+              <section className="mt-4 rounded-xl bg-gray-50 p-4 dark:bg-zinc-900/60">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)">Catatan</p>
+                <p className="mt-1 text-sm leading-relaxed text-(--color-text)">{notes}</p>
+              </section>
+            ) : null}
+
+            {/* Reminder singkat */}
+            {reminderCount > 0 && (
+              <section className="mt-6">
+                <h2 className="mb-3 text-[11px] font-bold uppercase tracking-wider text-(--color-text-muted)">
+                  Pengingat servis
+                </h2>
+                <ul className="space-y-2.5">
                   {detail.reminders.map((r) => {
                     const isOverdue = r.is_overdue_km || r.is_overdue_date;
                     return (
-                      <div
+                      <li
                         key={r.id}
-                        className={`rounded-2xl p-4 ${isOverdue
-                            ? "bg-red-50 dark:bg-red-900/20"
-                            : "bg-(--color-surface)"
-                          }`}
+                        className={`rounded-xl p-4 transition-all duration-200 hover:shadow-md ${
+                          isOverdue ? "bg-red-50 dark:bg-red-900/20" : "bg-white shadow-sm ring-1 ring-(--color-border)/50 dark:bg-(--color-surface)"
+                        }`}
                       >
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm font-semibold capitalize">
-                            {r.service_type} service
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm font-semibold capitalize text-(--color-text)">
+                            {r.service_type === "light" ? "Servis ringan" : "Servis besar"}
                           </span>
-                          {isOverdue && (
-                            <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-bold text-red-600 dark:bg-red-900/40 dark:text-red-400">
+                          {isOverdue ? (
+                            <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-[11px] font-bold text-red-600 dark:bg-red-900/40 dark:text-red-400">
                               Overdue
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-(--color-text-secondary)">
+                          {r.next_due_km > 0 && <span>Due at {r.next_due_km.toLocaleString("id-ID")} km</span>}
+                          {r.next_due_date && (
+                            <span>
+                              Due {new Date(r.next_due_date).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}
                             </span>
                           )}
                         </div>
-                        <div className="mt-2 flex gap-4 text-xs text-(--color-text-secondary)">
-                          {r.next_due_km > 0 && (
-                            <span>Due at {r.next_due_km.toLocaleString()} km</span>
-                          )}
-                          {r.next_due_date && (
-                            <span>Due {new Date(r.next_due_date).toLocaleDateString()}</span>
-                          )}
-                        </div>
-                      </div>
+                      </li>
                     );
                   })}
-                </div>
-              </div>
+                </ul>
+              </section>
             )}
           </>
         )}
       </main>
 
-      {mileageModalOpen && detail && (
-        <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center"
-          role="presentation"
-          onClick={(e) => {
-            if (e.target === e.currentTarget && !mileageSaving) setMileageModalOpen(false);
-          }}
-        >
-          <div
-            className="w-full max-w-md rounded-3xl bg-(--color-bg) p-6 shadow-2xl"
-            role="dialog"
-            aria-labelledby="mileage-dialog-title"
-          >
-            <h2 id="mileage-dialog-title" className="text-lg font-bold">
-              Update current KM
-            </h2>
-            <p className="mt-1 text-sm text-(--color-text-secondary)">
-              New reading must be at least{" "}
-              <span className="font-semibold text-(--color-text)">
-                {minRecordedMileage.toLocaleString()} km
-              </span>
-              {minRecordedMileage === 0 ? " (first entry)" : ""}.
-            </p>
-            <form onSubmit={handleMileageModalSubmit} className="mt-5 space-y-4">
-              <input
-                type="number"
-                inputMode="numeric"
-                value={mileageInput}
-                onChange={(e) => setMileageInput(e.target.value)}
-                min={minRecordedMileage}
-                required
-                className="w-full rounded-2xl border border-(--color-border) px-4 py-3.5 text-sm outline-none transition-colors placeholder:text-(--color-text-muted) focus:border-(--color-primary) focus:ring-2 focus:ring-(--color-primary)/20"
-                placeholder="Odometer (km)"
-                autoFocus
-              />
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  disabled={mileageSaving}
-                  onClick={() => setMileageModalOpen(false)}
-                  className="flex-1 rounded-2xl bg-(--color-surface) py-3.5 text-sm font-semibold shadow-sm transition-colors hover:shadow-md disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={mileageSaving}
-                  className="flex-1 rounded-2xl bg-(--color-primary) py-3.5 text-sm font-bold text-white shadow-lg shadow-(--color-primary)/25 transition-all hover:brightness-110 disabled:opacity-50"
-                >
-                  {mileageSaving ? "Saving…" : "Save"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {id && (
+        <Suspense fallback={null}>
+          <MileageFromQuery vehicleId={id as string} detail={detail} onOpen={openMileageModal} />
+        </Suspense>
       )}
+      <AddMileageModal
+        open={mileageModalOpen && !!id}
+        onClose={() => setMileageModalOpen(false)}
+        vehicleId={(id as string) ?? ""}
+        minMileage={minRecordedMileage}
+        onSaved={refreshVehicleData}
+        title="Perbarui kilometer"
+      />
+
+      <ConfirmDialog
+        open={!!pendingDeleteMileage}
+        title="Hapus catatan KM?"
+        message={
+          pendingDeleteMileage
+            ? `Catatan ${pendingDeleteMileage.mileage.toLocaleString("id-ID")} KM akan dihapus permanen. Jika ini catatan terbaru, KM kendaraan akan turun ke catatan sebelumnya.`
+            : ""
+        }
+        confirmLabel={deletingMileage ? "Menghapus…" : "Hapus"}
+        cancelLabel="Batal"
+        variant="danger"
+        onConfirm={() => void confirmDeleteMileage()}
+        onCancel={cancelDeleteMileage}
+      />
     </div>
   );
 }
 
+/**
+ * Invisible-ish sentinel that triggers `onIntersect` when the user
+ * scrolls it into view (or near it via `rootMargin`). When loading is
+ * true we render a spinner so users get feedback that more rows are on
+ * the way.
+ *
+ * Why a separate component:
+ *   - Encapsulates the IntersectionObserver lifecycle so the parent's
+ *     useEffect dependency list stays clean.
+ *   - Re-attaches the observer when `onIntersect` identity changes
+ *     (which happens whenever historyLogs/cursor changes — exactly the
+ *     points where a fresh observation should be allowed to fire).
+ *   - rootMargin pre-fetches before the user actually hits the bottom,
+ *     making the load feel seamless rather than "scroll-and-wait".
+ */
+function HistorySentinel({
+  onIntersect,
+  loading,
+}: {
+  onIntersect: () => void;
+  loading: boolean;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    // Guard for SSR / very old browsers (defensive — Next 13+ targets
+    // browsers that all support IntersectionObserver).
+    if (typeof IntersectionObserver === "undefined") {
+      onIntersect();
+      return;
+    }
+
+    const obs = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry?.isIntersecting) onIntersect();
+      },
+      {
+        // Pre-load 200px before sentinel actually enters viewport so the
+        // user rarely sees a "loading…" stall.
+        rootMargin: "0px 0px 200px 0px",
+        threshold: 0,
+      },
+    );
+    obs.observe(node);
+    return () => obs.disconnect();
+  }, [onIntersect]);
+
+  return (
+    <div
+      ref={ref}
+      className="flex h-10 items-center justify-center text-[11px] text-(--color-text-muted)"
+      aria-live="polite"
+    >
+      {loading ? (
+        <span className="flex items-center gap-2">
+          <span
+            aria-hidden
+            className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-(--color-border) border-t-(--color-primary)"
+          />
+          Memuat lebih banyak…
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function formatRelative(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const mins = Math.floor(diffMs / 60_000);
+  if (mins < 1) return "baru saja";
+  if (mins < 60) return `${mins}m lalu`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}j lalu`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}h lalu`;
+  return d.toLocaleDateString("id-ID", { day: "numeric", month: "short" });
+}
+
+function MileageFromQuery({
+  vehicleId,
+  detail,
+  onOpen,
+}: {
+  vehicleId: string;
+  detail: VehicleDetail | null;
+  onOpen: () => void;
+}) {
+  const searchParams = useSearchParams();
+  const openedRef = useRef(false);
+
+  useEffect(() => {
+    openedRef.current = false;
+  }, [vehicleId]);
+
+  useEffect(() => {
+    if (!detail || openedRef.current) return;
+    if (detail.vehicle.id !== vehicleId) return;
+    if (searchParams.get("mileage") !== "1") return;
+    openedRef.current = true;
+    onOpen();
+    window.history.replaceState(null, "", `/vehicles/${vehicleId}`);
+  }, [detail, vehicleId, searchParams, onOpen]);
+
+  return null;
+}
+
 function StatCard({
-  icon,
   label,
   value,
+  sub,
   onPress,
-  hint,
+  accent,
 }: {
-  icon: string;
   label: string;
   value: string;
+  sub?: string;
   onPress?: () => void;
-  hint?: string;
+  accent?: boolean;
 }) {
   const body = (
     <>
-      <div className="mb-2 flex items-start justify-between gap-2">
-        <span className="text-lg">{icon}</span>
-        {hint && onPress && (
-          <span className="text-[10px] font-semibold uppercase tracking-wide text-(--color-primary)">
-            {hint}
-          </span>
-        )}
-      </div>
-      <p className="text-xs font-semibold uppercase tracking-wider text-(--color-text-muted)">
-        {label}
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-(--color-text-muted)">{label}</p>
+      <p className={`mt-1 truncate text-lg font-bold tabular-nums ${accent ? "text-blue-600 dark:text-blue-400" : "text-(--color-text)"}`}>
+        {value}
       </p>
-      <p className="mt-0.5 text-base font-bold capitalize">{value}</p>
+      {sub ? <p className="mt-0.5 truncate text-[11px] text-(--color-text-secondary)">{sub}</p> : null}
     </>
   );
 
+  const base =
+    "rounded-xl bg-white p-4 text-left shadow-sm ring-1 ring-(--color-border)/40 transition-all duration-200 hover:shadow-md dark:bg-(--color-surface) dark:ring-(--color-border)/60";
+
   if (onPress) {
     return (
-      <button
-        type="button"
-        onClick={onPress}
-        className="rounded-2xl bg-(--color-surface) p-4 text-left shadow-sm ring-(--color-primary)/0 transition-all hover:shadow-md hover:ring-2 hover:ring-(--color-primary)/20 active:scale-[0.98]"
-      >
+      <button type="button" onClick={onPress} className={`${base} ${btnPress}`}>
         {body}
       </button>
     );
   }
-
-  return <div className="rounded-2xl bg-(--color-surface) p-4 shadow-sm">{body}</div>;
+  return <div className={base}>{body}</div>;
 }

@@ -103,13 +103,17 @@ export default function ProfilePage() {
   const [darkMode, setDarkMode] = useState(false);
 
   useEffect(() => {
-    if (!authLoading && !user) router.replace("/login");
+    if (!authLoading && !user) router.replace("/access");
   }, [user, authLoading, router]);
 
   useEffect(() => {
     const stored = localStorage.getItem("theme");
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    setDarkMode(stored === "dark" || (!stored && prefersDark));
+    const isDark = stored === "dark" || (!stored && prefersDark);
+    setDarkMode(isDark);
+    // Defensive: keep <html>.dark in sync in case the bootstrap script and the
+    // current DOM state diverged (e.g. user toggled in another tab).
+    document.documentElement.classList.toggle("dark", isDark);
   }, []);
 
   const handleThemeToggle = (enabled: boolean) => {
@@ -122,7 +126,7 @@ export default function ProfilePage() {
 
   const handleLogout = () => {
     logout();
-    router.replace("/login");
+    router.replace("/access");
   };
 
   const memberSince = new Date(user.created_at).toLocaleDateString("en-US", {

@@ -4,19 +4,19 @@ import { useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 
-/** History is shown on the vehicle detail page; keep this route for old links. */
+/** Link lama: timeline KM sekarang di detail kendaraan. */
 export default function HistoryPage() {
   const { id } = useParams<{ id: string }>();
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    if (!authLoading && !user) router.replace("/login");
+    if (!authLoading && !user) router.replace("/access");
   }, [user, authLoading, router]);
 
   useEffect(() => {
     if (!authLoading && user && id) {
-      router.replace(`/vehicles/${id}#mileage-history`);
+      router.replace(`/vehicles/${id}#mileage-timeline`);
     }
   }, [authLoading, user, id, router]);
 

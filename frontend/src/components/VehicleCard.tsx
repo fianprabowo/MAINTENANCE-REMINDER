@@ -4,6 +4,11 @@ import StatusBadge from "./StatusBadge";
 
 interface VehicleCardProps {
   vehicle: Vehicle;
+  /** Tap utama = pilih kendaraan aktif (Home), bukan navigasi detail */
+  pickMode?: boolean;
+  onPick?: (vehicle: Vehicle) => void;
+  /** Sorot jika ini kendaraan aktif di Home */
+  isActivePick?: boolean;
 }
 
 function ChevronRight({ className }: { className?: string }) {
@@ -43,35 +48,90 @@ function FuelBar({ level }: { level: number }) {
   );
 }
 
-export default function VehicleCard({ vehicle }: VehicleCardProps) {
-  const typeIcon = vehicle.type === "car" ? "🚗" : "🏍️";
+export default function VehicleCard({
+  vehicle,
+  pickMode,
+  onPick,
+  isActivePick,
+}: VehicleCardProps) {
+  const typeIcon = "🏍️";
+
+  const inner = (
+    <>
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-(--color-surface-alt) text-2xl leading-none">
+        {typeIcon}
+      </div>
+
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="truncate text-sm font-semibold text-(--color-text) group-hover:text-(--color-primary) transition-colors">
+            {vehicle.name}
+          </h3>
+          {vehicle.status !== "good" && <StatusBadge status={vehicle.status} />}
+        </div>
+
+        <p className="mt-0.5 text-xs text-(--color-text-muted)">
+          {vehicle.brand} · {vehicle.year}
+          {vehicle.motorcycle_category_name && (
+            <span className="ml-1.5 rounded-md bg-(--color-primary-soft) px-1.5 py-0.5 text-[10px] font-semibold text-(--color-primary)">
+              {vehicle.motorcycle_category_name.replace(/^Motor\s/, "")}
+            </span>
+          )}
+          {vehicle.status === "good" && (
+            <span
+              role="img"
+              aria-label="Good"
+              title="Good"
+              className="ml-1.5 inline-block h-2 w-2 rounded-full bg-emerald-500 align-middle"
+            />
+          )}
+        </p>
+
+        <div className="mt-1.5">
+          <FuelBar level={vehicle.fuel_level} />
+        </div>
+        {pickMode && (
+          <p className="mt-2 text-[10px] font-semibold uppercase tracking-wide text-(--color-primary)">
+            {isActivePick ? "Aktif di Home" : "Tap untuk jadikan kendaraan utama"}
+          </p>
+        )}
+      </div>
+
+      {!pickMode && (
+        <ChevronRight className="h-4 w-4 shrink-0 text-(--color-text-muted)/40" />
+      )}
+    </>
+  );
+
+  const shellClass = `group flex items-center gap-3.5 rounded-2xl p-4 shadow-sm transition-all hover:shadow-md active:scale-[0.99] ${
+    pickMode && isActivePick
+      ? "bg-(--color-primary-soft) ring-2 ring-(--color-primary)/35"
+      : "bg-(--color-surface)"
+  }`;
+
+  if (pickMode && onPick) {
+    return (
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => onPick(vehicle)}
+          className={`${shellClass} w-full pr-16 text-left`}
+        >
+          {inner}
+        </button>
+        <Link
+          href={`/vehicles/${vehicle.id}`}
+          className="absolute right-2 top-2 z-10 rounded-lg bg-(--color-surface) px-2 py-1 text-[10px] font-bold text-(--color-primary) shadow-sm ring-1 ring-(--color-border)/60 transition-colors hover:bg-(--color-primary-soft)"
+        >
+          Detail
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <Link href={`/vehicles/${vehicle.id}`}>
-      <div className="group flex items-center gap-3.5 rounded-2xl bg-(--color-surface) p-4 shadow-sm transition-all hover:shadow-md active:scale-[0.99]">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-(--color-surface-alt) text-2xl leading-none">
-          {typeIcon}
-        </div>
-
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="truncate text-sm font-semibold text-(--color-text) group-hover:text-(--color-primary) transition-colors">
-              {vehicle.name}
-            </h3>
-            <StatusBadge status={vehicle.status} />
-          </div>
-
-          <p className="mt-0.5 text-xs text-(--color-text-muted)">
-            {vehicle.brand} · {vehicle.year}
-          </p>
-
-          <div className="mt-1.5">
-            <FuelBar level={vehicle.fuel_level} />
-          </div>
-        </div>
-
-        <ChevronRight className="h-4 w-4 shrink-0 text-(--color-text-muted)/40" />
-      </div>
+      <div className={shellClass}>{inner}</div>
     </Link>
   );
 }
