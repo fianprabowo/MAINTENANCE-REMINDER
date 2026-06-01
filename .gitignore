@@ -18,25 +18,6 @@ pnpm-debug.log*
 out/
 .vercel
 
-# --- Go ---
-# Binaries for programs and plugins
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-# Test binary, built with `go test -c`
-*.test
-# Code coverage profiles and other test artifacts
-*.out
-coverage.*
-*.coverprofile
-profile.cov
-# Optional: uncomment to ignore vendored deps
-# vendor/
-go.work
-go.work.sum
-
 # --- OS ---
 .DS_Store
 Thumbs.db
