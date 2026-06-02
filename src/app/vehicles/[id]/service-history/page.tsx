@@ -1014,7 +1014,7 @@ export default function ServiceHistoryPage() {
                               <p className="text-[11px] font-semibold uppercase tracking-wide text-(--color-text-muted)">
                                 {formatServiceDate(r.serviced_at)}
                               </p>
-                              <p className="mt-2 text-base font-bold tabular-nums tracking-tight text-(--color-text)">
+                              <p className="mt-2 text-sm font-bold tabular-nums tracking-tight text-(--color-text)">
                                 KM {formatKm(r.mileage_at_service)}
                               </p>
                               <p className="mt-1 text-sm font-semibold text-(--color-text-secondary)">{recordTitle(r)}</p>
