@@ -17,6 +17,7 @@ interface CustomSelectProps {
   className?: string;
   maxHeight?: number;
   error?: boolean;
+  disabled?: boolean;
 }
 
 function ChevronDown({ className }: { className?: string }) {
@@ -44,6 +45,7 @@ export default function CustomSelect({
   className,
   maxHeight = 260,
   error,
+  disabled = false,
 }: CustomSelectProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -96,21 +98,26 @@ export default function CustomSelect({
           className="pointer-events-none absolute inset-0 opacity-0"
           value={value}
           required={required}
-          onChange={() => {}}
+          onChange={() => { }}
           aria-hidden="true"
         />
       )}
 
       <button
         type="button"
-        onClick={() => setOpen(!open)}
-        className={`flex w-full items-center justify-between rounded-2xl border bg-(--color-surface) px-4 py-3.5 text-left text-sm outline-none transition-colors ${
-          open
-            ? "border-(--color-primary) ring-2 ring-(--color-primary)/20"
-            : error
-              ? "border-red-300 dark:border-red-800/60"
-              : "border-(--color-border)"
-        } ${!selected ? "text-(--color-text-muted)" : ""}`}
+        disabled={disabled}
+        onClick={() => !disabled && setOpen(!open)}
+        className={`flex w-full items-center justify-between rounded-2xl border bg-white px-4 py-3.5 text-left text-sm outline-none transition-all dark:bg-(--color-surface) ${disabled
+            ? "cursor-not-allowed border-(--color-border)/70 opacity-50"
+            : "cursor-pointer"
+          } ${!disabled && open
+            ? "border-(--color-primary) ring-4 ring-(--color-primary)/15"
+            : !disabled && error
+              ? "border-red-300 hover:bg-red-50/50 dark:border-red-800/60 dark:hover:bg-red-950/20"
+              : !disabled
+                ? "border-(--color-border)/70 hover:border-(--color-border) hover:bg-(--color-primary-soft)/50"
+                : "border-(--color-border)/70"
+          } ${!selected ? "text-(--color-text-muted)" : "font-medium text-(--color-text)"}`}
       >
         <span className="flex items-center gap-2 truncate">
           {selected ? (
@@ -123,16 +130,15 @@ export default function CustomSelect({
           )}
         </span>
         <ChevronDown
-          className={`h-4 w-4 shrink-0 text-(--color-text-muted) transition-transform duration-200 ${
-            open ? "rotate-180" : ""
-          }`}
+          className={`h-4 w-4 shrink-0 text-(--color-text-muted) transition-transform duration-200 ${open ? "rotate-180" : ""
+            }`}
         />
       </button>
 
       {open && (
         <div
           ref={listRef}
-          className="absolute left-0 right-0 z-50 mt-2 overflow-hidden rounded-2xl border border-(--color-border) bg-(--color-bg) shadow-xl shadow-black/8 dark:shadow-black/30"
+          className="absolute left-0 right-0 z-50 mt-2 overflow-hidden rounded-2xl border border-(--color-border) bg-white shadow-xl shadow-black/8 dark:bg-(--color-bg) dark:shadow-black/30"
         >
           <div
             className="overflow-y-auto overscroll-contain py-1.5"
@@ -148,11 +154,10 @@ export default function CustomSelect({
                     onChange(option.value);
                     setOpen(false);
                   }}
-                  className={`flex w-full items-center gap-2.5 px-4 py-3 text-left text-sm transition-colors ${
-                    isSelected
-                      ? "bg-(--color-primary-soft) font-semibold text-(--color-primary)"
-                      : "text-(--color-text) hover:bg-(--color-surface-alt) active:bg-(--color-border)/50"
-                  }`}
+                  className={`flex w-full cursor-pointer items-center gap-2.5 px-4 py-3 text-left text-sm transition-colors ${isSelected
+                      ? "bg-(--color-primary-soft)/60 font-semibold text-(--color-text) hover:bg-(--color-primary-soft)/80"
+                      : "text-(--color-text) hover:bg-(--color-primary-soft)/50 active:bg-(--color-primary-soft)/60"
+                    }`}
                 >
                   {option.icon && <span className="text-base">{option.icon}</span>}
                   <span className="flex-1">{option.label}</span>
