@@ -380,6 +380,7 @@ export default function ServiceHistoryPage() {
    * non-matic gets only engine oil. Falls back to engine-only for safety.
    */
   const hasGearboxInterval = detail?.motorcycle_category?.has_gearbox_oil_interval ?? false;
+  const currentKm = detail?.vehicle.current_mileage_km ?? 0;
 
   /**
    * Chip click = preset state. Bukan toggle, bukan additive.
@@ -403,6 +404,10 @@ export default function ServiceHistoryPage() {
             service_type: "light",
             changed_engine_oil: true,
             changed_gearbox_oil: hasGearboxInterval,
+            mileage_at_service:
+              currentKm > 0 && !f.mileage_at_service.trim()
+                ? String(currentKm)
+                : f.mileage_at_service,
           };
         }
         return {
@@ -416,7 +421,7 @@ export default function ServiceHistoryPage() {
         setOilPrices({ engine: "", gearbox: "" });
       }
     },
-    [hasGearboxInterval],
+    [hasGearboxInterval, currentKm],
   );
 
   /**
@@ -690,12 +695,6 @@ export default function ServiceHistoryPage() {
     };
   }, [addModalOpen]);
 
-  /**
-   * KM saat ini dari kendaraan (denormalized dari `mileage_logs` via DB
-   * trigger). Dipakai untuk validasi forward-only — service record baru
-   * tidak boleh mundur dari odometer terakhir.
-   */
-  const currentKm = detail?.vehicle.current_mileage_km ?? 0;
   /**
    * Original KM dari record yang sedang diedit. `null` saat add. Dipakai
    * untuk lenient-update: kalau user tidak mengubah KM record lama (yang
@@ -999,91 +998,89 @@ export default function ServiceHistoryPage() {
                           </button>
 
                           <div className="min-w-0 px-4 pb-3 pr-12 pt-3">
-                          <div
-                            role="button"
-                            tabIndex={0}
-                            onClick={() => setSelectedRecord(r)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter" || e.key === " ") {
-                                e.preventDefault();
-                                setSelectedRecord(r);
-                              }
-                            }}
-                            className="cursor-pointer rounded-lg text-left outline-none transition-colors duration-200 hover:bg-(--color-surface-alt)/70 focus-visible:ring-2 focus-visible:ring-(--color-primary)/30 focus-visible:ring-inset"
-                            style={{ WebkitTapHighlightColor: "transparent" }}
-                          >
-                            <p className="text-[11px] font-semibold uppercase tracking-wide text-(--color-text-muted)">
-                              {formatServiceDate(r.serviced_at)}
-                            </p>
-                            <p className="mt-2 text-base font-bold tabular-nums tracking-tight text-(--color-text)">
-                              KM {formatKm(r.mileage_at_service)}
-                            </p>
-                            <p className="mt-1 text-sm font-semibold text-(--color-text-secondary)">{recordTitle(r)}</p>
-                            {/* Badge "Ganti oli mesin/gardan" sengaja tidak ditampilkan di
+                            <div
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => setSelectedRecord(r)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  setSelectedRecord(r);
+                                }
+                              }}
+                              className="cursor-pointer rounded-lg text-left outline-none transition-colors duration-200 hover:bg-(--color-surface-alt)/70 focus-visible:ring-2 focus-visible:ring-(--color-primary)/30 focus-visible:ring-inset"
+                              style={{ WebkitTapHighlightColor: "transparent" }}
+                            >
+                              <p className="text-[11px] font-semibold uppercase tracking-wide text-(--color-text-muted)">
+                                {formatServiceDate(r.serviced_at)}
+                              </p>
+                              <p className="mt-2 text-base font-bold tabular-nums tracking-tight text-(--color-text)">
+                                KM {formatKm(r.mileage_at_service)}
+                              </p>
+                              <p className="mt-1 text-sm font-semibold text-(--color-text-secondary)">{recordTitle(r)}</p>
+                              {/* Badge "Ganti oli mesin/gardan" sengaja tidak ditampilkan di
                                 list view — info ini sudah ada di detail bottom sheet
                                 (terbuka via tap card), supaya kartu lebih ringkas dan
                                 memuat lebih banyak record dalam satu layar. */}
-                            {r.location ? (
-                              <p className="mt-1.5 inline-flex max-w-full items-center gap-1 text-xs text-(--color-text-muted)">
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 shrink-0" aria-hidden>
-                                  <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 1 1 18 0z" />
-                                  <circle cx="12" cy="10" r="3" />
-                                </svg>
-                                <span className="truncate">{r.location}</span>
-                              </p>
-                            ) : null}
-                            {total > 0 ? (
-                              <p className="mt-2 text-sm font-semibold tabular-nums text-sky-600 dark:text-sky-400">
-                                Total {formatIdr(total)}
-                              </p>
-                            ) : null}
-                          </div>
+                              {r.location ? (
+                                <p className="mt-1.5 inline-flex max-w-full items-center gap-1 text-xs text-(--color-text-muted)">
+                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 shrink-0" aria-hidden>
+                                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 1 1 18 0z" />
+                                    <circle cx="12" cy="10" r="3" />
+                                  </svg>
+                                  <span className="truncate">{r.location}</span>
+                                </p>
+                              ) : null}
+                              {total > 0 ? (
+                                <p className="mt-2 text-sm font-semibold tabular-nums text-sky-600 dark:text-sky-400">
+                                  Total {formatIdr(total)}
+                                </p>
+                              ) : null}
+                            </div>
 
-                          {desc ? (
-                            <div className="mt-2">
-                              <div
-                                className={`transition-[max-height] duration-300 ease-out motion-reduce:transition-none ${
-                                  descOpen
-                                    ? "max-h-[min(50vh,28rem)] overflow-y-auto"
-                                    : "max-h-[2.75rem] overflow-hidden"
-                                }`}
-                              >
+                            {desc ? (
+                              <div className="mt-2">
+                                <div
+                                  className={`transition-[max-height] duration-300 ease-out motion-reduce:transition-none ${descOpen
+                                      ? "max-h-[min(50vh,28rem)] overflow-y-auto"
+                                      : "max-h-[2.75rem] overflow-hidden"
+                                    }`}
+                                >
+                                  <button
+                                    type="button"
+                                    className="block w-full cursor-pointer rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-(--color-primary)/25"
+                                    onClick={() => setSelectedRecord(r)}
+                                  >
+                                    <p
+                                      className={`whitespace-pre-line break-words text-xs leading-relaxed text-(--color-text-secondary) ${descOpen ? "" : "line-clamp-2"
+                                        }`}
+                                    >
+                                      {desc}
+                                    </p>
+                                  </button>
+                                </div>
                                 <button
                                   type="button"
-                                  className="block w-full cursor-pointer rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-(--color-primary)/25"
-                                  onClick={() => setSelectedRecord(r)}
+                                  aria-expanded={descOpen}
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    toggleDescriptionExpanded(r.id);
+                                  }}
+                                  className={`mt-1.5 flex w-full items-center gap-1 text-left text-[11px] font-semibold text-(--color-primary) underline-offset-2 hover:underline ${btnPress}`}
                                 >
-                                  <p
-                                    className={`whitespace-pre-line break-words text-xs leading-relaxed text-(--color-text-secondary) ${
-                                      descOpen ? "" : "line-clamp-2"
-                                    }`}
-                                  >
-                                    {desc}
-                                  </p>
+                                  <span className={`inline-block transition-transform duration-200 ${descOpen ? "rotate-180" : ""}`} aria-hidden>
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5">
+                                      <path
+                                        fillRule="evenodd"
+                                        d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+                                        clipRule="evenodd"
+                                      />
+                                    </svg>
+                                  </span>
+                                  {descOpen ? "Sembunyikan" : "Lihat detail"}
                                 </button>
                               </div>
-                              <button
-                                type="button"
-                                aria-expanded={descOpen}
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  toggleDescriptionExpanded(r.id);
-                                }}
-                                className={`mt-1.5 flex w-full items-center gap-1 text-left text-[11px] font-semibold text-(--color-primary) underline-offset-2 hover:underline ${btnPress}`}
-                              >
-                                <span className={`inline-block transition-transform duration-200 ${descOpen ? "rotate-180" : ""}`} aria-hidden>
-                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5">
-                                    <path
-                                      fillRule="evenodd"
-                                      d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
-                                      clipRule="evenodd"
-                                    />
-                                  </svg>
-                                </span>
-                                {descOpen ? "Sembunyikan" : "Lihat detail"}
-                              </button>
-                            </div>
-                          ) : null}
+                            ) : null}
                           </div>
                         </div>
                       </SwipeableRow>
@@ -1141,17 +1138,29 @@ export default function ServiceHistoryPage() {
                   <div className="flex items-center justify-between gap-2">
                     <label
                       htmlFor="modal-km"
-                      className="text-[10px] font-bold uppercase tracking-wide text-(--color-text-muted)"
+                      className="text-[10px] font-bold text-(--color-text-muted)"
                     >
                       KM odometer
                     </label>
-                    {/* Hint KM saat ini sebagai context — supaya user tahu
-                        floor minimum sebelum mulai mengetik. Disembunyikan
-                        kalau currentKm 0 (tidak relevan untuk kendaraan baru). */}
                     {currentKm > 0 ? (
-                      <span className="text-[10px] font-semibold tabular-nums text-(--color-text-muted)">
-                        Saat ini: {formatKm(currentKm)}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-semibold tabular-nums text-(--color-text-muted)">
+                          Saat ini: {formatKm(currentKm)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setForm((f) => ({
+                              ...f,
+                              mileage_at_service: String(currentKm),
+                            }))
+                          }
+                          className="text-[10px] font-bold uppercase tracking-wide text-(--color-primary) transition-opacity hover:opacity-80 active:opacity-60"
+                          aria-label={`Set KM ke ${formatKm(currentKm)}`}
+                        >
+                          SET
+                        </button>
+                      </div>
                     ) : null}
                   </div>
                   <div className="relative mt-1.5">
@@ -1184,12 +1193,11 @@ export default function ServiceHistoryPage() {
                       }}
                       aria-invalid={kmError !== null && form.mileage_at_service.trim() !== ""}
                       aria-describedby={kmError ? "modal-km-error" : undefined}
-                      className={`${inputClass} py-3.5 pr-12 text-base font-semibold tabular-nums ${
-                        kmError && form.mileage_at_service.trim() !== ""
+                      className={`${inputClass} py-3.5 pr-12 text-base font-semibold tabular-nums ${kmError && form.mileage_at_service.trim() !== ""
                           ? "ring-red-400 focus:ring-red-400/60"
                           : ""
-                      }`}
-                      placeholder="Mis. 12500"
+                        }`}
+                      placeholder="Misal: 12500"
                     />
                     <span
                       className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xs font-semibold uppercase tracking-wide text-(--color-text-muted)"
@@ -1214,7 +1222,7 @@ export default function ServiceHistoryPage() {
                     detail opsional, jadi taruh di Quick (bukan di balik
                     "Tambahkan detail"). Default tanggal = hari ini. */}
                 <div>
-                  <label className="text-[10px] font-bold uppercase tracking-wide text-(--color-text-muted)">
+                  <label className="text-[10px] font-bold text-(--color-text-muted)">
                     Tanggal
                   </label>
                   <input
@@ -1229,7 +1237,7 @@ export default function ServiceHistoryPage() {
                 <div>
                   <label
                     htmlFor="modal-location"
-                    className="text-[10px] font-bold uppercase tracking-wide text-(--color-text-muted)"
+                    className="text-[10px] font-bold text-(--color-text-muted)"
                   >
                     Lokasi <span className="font-medium normal-case text-(--color-text-muted)/80">(opsional)</span>
                   </label>
@@ -1274,7 +1282,7 @@ export default function ServiceHistoryPage() {
                 </div>
 
                 <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wide text-(--color-text-muted)">
+                  <span className="text-[10px] font-bold text-(--color-text-muted)">
                     Jenis servis
                   </span>
                   <div
@@ -1291,11 +1299,10 @@ export default function ServiceHistoryPage() {
                           role="radio"
                           aria-checked={isActive}
                           onClick={() => applyChip(c.id)}
-                          className={`rounded-full px-3.5 py-2 text-xs font-bold ring-1 transition-all duration-150 ${btnPress} ${
-                            isActive
+                          className={`rounded-full px-3.5 py-2 text-xs font-bold ring-1 transition-all duration-150 ${btnPress} ${isActive
                               ? "bg-(--color-primary-soft) text-(--color-primary) ring-(--color-primary)/45 shadow-sm"
                               : "bg-(--color-surface) text-(--color-text-secondary) ring-(--color-border)/40 hover:ring-(--color-primary)/40"
-                          }`}
+                            }`}
                         >
                           {c.label}
                         </button>
@@ -1310,11 +1317,10 @@ export default function ServiceHistoryPage() {
                     servis + ganti oli. Setiap baris: checkbox + price
                     inline. Price input hanya muncul saat checkbox aktif. */}
                 <fieldset
-                  className={`flex flex-col gap-2.5 rounded-2xl p-4 shadow-sm transition-colors duration-200 ${
-                    activeChip === "oil_change"
+                  className={`flex flex-col gap-2.5 rounded-2xl p-4 shadow-sm transition-colors duration-200 ${activeChip === "oil_change"
                       ? "bg-(--color-primary-soft)/40 ring-1 ring-(--color-primary)/30"
                       : "bg-(--color-surface)/60"
-                  }`}
+                    }`}
                 >
                   <legend className="px-1 text-[10px] font-bold uppercase tracking-wide text-(--color-text-muted)">
                     Ganti oli
@@ -1357,11 +1363,10 @@ export default function ServiceHistoryPage() {
                       return (
                         <div
                           key={row.which}
-                          className={`flex items-center gap-2 rounded-xl bg-(--color-bg) px-3 py-2 ring-1 transition-all duration-150 ${
-                            active
+                          className={`flex items-center gap-2 rounded-xl bg-(--color-bg) px-3 py-2 ring-1 transition-all duration-150 ${active
                               ? "ring-(--color-primary)/45"
                               : "ring-(--color-border)/40"
-                          }`}
+                            }`}
                         >
                           {/* Checkbox + label di kiri (flex-1 supaya nggak nge-push
                               price input saat row width berubah). Price input di
@@ -1375,9 +1380,8 @@ export default function ServiceHistoryPage() {
                               className="h-4 w-4 shrink-0 cursor-pointer accent-(--color-primary)"
                             />
                             <span
-                              className={`truncate font-semibold ${
-                                active ? "text-(--color-primary)" : "text-(--color-text)"
-                              }`}
+                              className={`truncate font-semibold ${active ? "text-(--color-primary)" : "text-(--color-text)"
+                                }`}
                             >
                               {row.label}
                             </span>
@@ -1548,11 +1552,10 @@ export default function ServiceHistoryPage() {
                                     disabled={used}
                                     onClick={() => addCommonPart(kind)}
                                     aria-pressed={used}
-                                    className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[11px] font-bold transition-all duration-150 ${btnPress} ${
-                                      used
+                                    className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[11px] font-bold transition-all duration-150 ${btnPress} ${used
                                         ? "cursor-not-allowed bg-(--color-primary-soft) text-(--color-primary)"
                                         : "bg-(--color-bg) text-(--color-text-secondary) ring-1 ring-(--color-border)/40 hover:bg-(--color-primary-soft) hover:text-(--color-primary) hover:ring-(--color-primary)/40"
-                                    }`}
+                                      }`}
                                   >
                                     <span aria-hidden className="text-[12px] leading-none">
                                       {used ? "✓" : "+"}
@@ -1577,11 +1580,10 @@ export default function ServiceHistoryPage() {
                               return (
                                 <li
                                   key={line.key}
-                                  className={`grid grid-cols-[minmax(0,1fr)_7.5rem_2rem] items-center gap-2 overflow-hidden transition-all duration-200 ease-out ${
-                                    isRemoving
+                                  className={`grid grid-cols-[minmax(0,1fr)_7.5rem_2rem] items-center gap-2 overflow-hidden transition-all duration-200 ease-out ${isRemoving
                                       ? "max-h-0 -translate-x-2 opacity-0"
                                       : "max-h-20 translate-x-0 opacity-100"
-                                  }`}
+                                    }`}
                                 >
                                   <label className="sr-only" htmlFor={`part-name-${line.key}`}>
                                     Nama part

@@ -106,22 +106,34 @@ export function isEngineOilRecord(r: ServiceRecord): boolean {
 export function pickLatestEngineOil(
   records: ServiceRecord[],
 ): { km: number; date: string } | null {
+  let best: { km: number; date: string } | null = null;
   for (const r of records) {
-    if (isEngineOilRecord(r)) {
-      return { km: r.mileage_at_service, date: r.serviced_at };
+    if (!isEngineOilRecord(r)) continue;
+    if (
+      !best ||
+      r.mileage_at_service > best.km ||
+      (r.mileage_at_service === best.km && r.serviced_at > best.date)
+    ) {
+      best = { km: r.mileage_at_service, date: r.serviced_at };
     }
   }
-  return null;
+  return best;
 }
 
 /** Sama seperti pickLatestEngineOil tapi untuk gearbox/gardan. */
 export function pickLatestGearboxOil(
   records: ServiceRecord[],
 ): { km: number; date: string } | null {
+  let best: { km: number; date: string } | null = null;
   for (const r of records) {
-    if (isGearboxOilRecord(r)) {
-      return { km: r.mileage_at_service, date: r.serviced_at };
+    if (!isGearboxOilRecord(r)) continue;
+    if (
+      !best ||
+      r.mileage_at_service > best.km ||
+      (r.mileage_at_service === best.km && r.serviced_at > best.date)
+    ) {
+      best = { km: r.mileage_at_service, date: r.serviced_at };
     }
   }
-  return null;
+  return best;
 }
