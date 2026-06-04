@@ -381,10 +381,8 @@ export default function DashboardPage() {
           </div>
         </Link>
 
-        {/* Hero: status utama. Untuk kendaraan dengan interval oli (motor),
-            kita tidak menampilkan hero terpisah — bar oli di bawah sudah
-            cukup informatif. Non-motor tetap pakai FuelLevelHero. */}
-        {hasOilHero ? null : <FuelLevelHero level={vehicle.fuel_level} />}
+        {/* Hero bensin (non-motor) — hidden, belum terpakai */}
+        {/* {hasOilHero ? null : <FuelLevelHero level={vehicle.fuel_level} />} */}
 
         {/* Insight oli (motor dengan interval) */}
         {hasOilHero && (
@@ -403,8 +401,8 @@ export default function DashboardPage() {
           </Link>
         )}
 
-        {/* Bensin: sekunder jika hero oli; detail gauge */}
-        <Link
+        {/* Bensin: sekunder jika hero oli; detail gauge — hidden, belum terpakai */}
+        {/* <Link
           href={`/vehicles/${vid}/fuel`}
           className="block rounded-2xl border border-(--color-border)/70 bg-(--color-surface) p-4 transition-colors hover:border-(--color-border)"
           aria-label={`Bensin ${vehicle.fuel_level} persen, buka halaman bensin dan estimasi`}
@@ -413,7 +411,7 @@ export default function DashboardPage() {
             {hasOilHero ? "Estimasi bensin" : "Detail & estimasi"}
           </p>
           <FuelGauge level={vehicle.fuel_level} />
-        </Link>
+        </Link> */}
 
         <Link
           href={`/vehicles/${vid}/service-history`}
@@ -432,20 +430,8 @@ export default function DashboardPage() {
           </span>
         </Link>
 
-        {/*
-          Reminder hero card. Promoted from a small 2-col grid tile to a
-          full-width banner because:
-            • Reminders ARE the app's core job-to-be-done. Hiding them
-              behind a count-only chip undersold the value.
-            • With the workshops/peta tile removed, the column is freed up
-              for a more informative single card.
-            • Status-driven accent color makes overdue items LOUD without
-              requiring users to drill in. Green/neutral when safe, red
-              when something needs attention.
-          We compute counts inline instead of in render-prep so the hook
-          set stays unchanged and the logic lives next to its consumer.
-        */}
-        {(() => {
+        {/* Reminder hero card — hidden, belum terpakai */}
+        {/* {(() => {
           const overdueCount = (reminders ?? []).filter(
             (r) => r.is_overdue_km || r.is_overdue_date,
           ).length;
@@ -453,9 +439,6 @@ export default function DashboardPage() {
           const hasOverdue = overdueCount > 0;
           const isEmpty = total === 0;
 
-          // Tone tokens kept inline — three states only, not worth a
-          // separate util. If we add "mendekati" tier later this becomes
-          // a small lookup map.
           const tone = hasOverdue
             ? {
                 ring: "ring-1 ring-(--color-critical)/30",
@@ -542,7 +525,7 @@ export default function DashboardPage() {
               </span>
             </Link>
           );
-        })()}
+        })()} */}
 
         <section id="mileage-chart" className="scroll-mt-28 space-y-3">
           <h2 className="text-xs font-bold uppercase tracking-wider text-(--color-text-muted)">Riwayat kilometer</h2>

@@ -53,7 +53,7 @@ export const REMINDER_PRESETS: readonly ReminderPreset[] = [
     slug: "oil_change",
     label: "Ganti oli",
     icon: "🛢️",
-    km: 2500,
+    km: 1500,
     days: 0,
     service_type: "light",
     defaultUseKm: true,
