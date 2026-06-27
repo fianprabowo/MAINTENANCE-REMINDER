@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import OdometerScanButton from "@/components/OdometerScanButton";
 import { insertMileage } from "@/lib/supabase";
 import { toast } from "sonner";
 
@@ -177,14 +178,14 @@ export default function AddMileageModal({
             }}
             disabled={saving}
             aria-invalid={fieldError}
-            className={`w-full rounded-2xl border px-4 py-3.5 text-sm outline-none transition-colors placeholder:text-(--color-text-muted) focus:ring-2 disabled:opacity-50 ${
-              fieldError
+            className={`w-full rounded-2xl border px-4 py-3.5 text-sm outline-none transition-colors placeholder:text-(--color-text-muted) focus:ring-2 disabled:opacity-50 ${fieldError
                 ? "border-red-500 bg-red-50/50 ring-2 ring-red-500/30 focus:border-red-500 focus:ring-red-500/25 dark:border-red-500/80 dark:bg-red-950/20 dark:ring-red-500/35"
                 : "border-(--color-border) focus:border-(--color-primary) focus:ring-(--color-primary)/20"
-            } ${shaking ? "input-err-shake" : ""}`}
+              } ${shaking ? "input-err-shake" : ""}`}
             placeholder="Odometer (km)"
             autoFocus
           />
+          <OdometerScanButton variant="full" disabled={saving} onDetected={setKmDigits} />
           {/* Primary CTA — pola tombol Simpan standar app: --color-primary
               solid + shadow-(--color-primary)/30 + active:scale-95.
               Sebelumnya posisi ini dipakai untuk "Batal" — kini dijadikan

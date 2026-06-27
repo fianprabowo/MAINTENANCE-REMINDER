@@ -12,6 +12,7 @@ import {
 } from "@/lib/supabase";
 import type { MotorcycleCategory, MotorcycleModel } from "@/lib/types";
 import CustomSelect from "@/components/CustomSelect";
+import OdometerScanButton from "@/components/OdometerScanButton";
 import { toast } from "sonner";
 
 // ---------------------------------------------------------------------------
@@ -522,8 +523,8 @@ export default function AddVehiclePage() {
                 <p className="text-sm font-semibold text-(--color-text)">Spesifikasi Kendaraan</p>
                 <p
                   className={`mt-1 text-xs leading-relaxed ${hasSpecValues && specSummary !== "Belum diisi"
-                      ? "font-medium text-(--color-text-secondary)"
-                      : "text-(--color-text-muted)"
+                    ? "font-medium text-(--color-text-secondary)"
+                    : "text-(--color-text-muted)"
                     }`}
                 >
                   {specSummary}
@@ -536,8 +537,8 @@ export default function AddVehiclePage() {
               </div>
               <span
                 className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-all duration-300 ease-out motion-reduce:transition-none ${advancedOpen
-                    ? "rotate-180 bg-(--color-primary-soft) text-(--color-primary)"
-                    : "bg-slate-100 text-(--color-text-secondary) dark:bg-(--color-surface-alt)"
+                  ? "rotate-180 bg-(--color-primary-soft) text-(--color-primary)"
+                  : "bg-slate-100 text-(--color-text-secondary) dark:bg-(--color-surface-alt)"
                   }`}
                 aria-hidden
               >
@@ -556,19 +557,26 @@ export default function AddVehiclePage() {
                     <span className={specFieldLabel}>
                       Kilometer awal
                     </span>
-                    <div className="relative">
-                      <input
-                        type="number"
-                        inputMode="numeric"
-                        value={form.initial_mileage}
-                        onChange={(e) => setForm({ ...form, initial_mileage: e.target.value })}
-                        className={specInputClass}
-                        placeholder="Contoh: 12500"
-                        min={0}
+                    <div className="flex gap-2">
+                      <div className="relative min-w-0 flex-1">
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          value={form.initial_mileage}
+                          onChange={(e) => setForm({ ...form, initial_mileage: e.target.value })}
+                          className={specInputClass}
+                          placeholder="Contoh: 12500"
+                          min={0}
+                        />
+                        <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xs font-semibold text-(--color-text-muted)">
+                          km
+                        </span>
+                      </div>
+                      <OdometerScanButton
+                        variant="icon"
+                        disabled={loading}
+                        onDetected={(km) => setForm((f) => ({ ...f, initial_mileage: km }))}
                       />
-                      <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xs font-semibold text-(--color-text-muted)">
-                        km
-                      </span>
                     </div>
                   </div>
 
