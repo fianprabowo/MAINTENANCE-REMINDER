@@ -286,6 +286,14 @@ export function mapReminderReset(row: {
   };
 }
 
+function parseNonNegInt(raw: unknown): number | null {
+  if (typeof raw === "number" && Number.isFinite(raw)) return Math.max(0, Math.round(raw));
+  if (typeof raw === "string" && /^\d+$/.test(raw.trim())) {
+    return Math.max(0, parseInt(raw.trim(), 10));
+  }
+  return null;
+}
+
 function parseServiceParts(raw: unknown): ServicePartLine[] {
   if (!Array.isArray(raw)) return [];
   const out: ServicePartLine[] = [];
@@ -293,18 +301,21 @@ function parseServiceParts(raw: unknown): ServicePartLine[] {
     if (!p || typeof p !== "object") continue;
     const o = p as Record<string, unknown>;
     const name = typeof o.name === "string" ? o.name.trim() : "";
-    const pr = o.price;
-    const price =
-      typeof pr === "number" && Number.isFinite(pr)
-        ? Math.max(0, Math.round(pr))
-        : typeof pr === "string" && /^\d+$/.test(pr)
-          ? Math.max(0, parseInt(pr, 10))
-          : 0;
+    const price = parseNonNegInt(o.price) ?? 0;
+    const qtyRaw = parseNonNegInt(o.qty);
+    const unitRaw = parseNonNegInt(o.unit_price);
+    const qty = qtyRaw != null && qtyRaw > 0 ? qtyRaw : undefined;
+    const unit_price = unitRaw != null && unitRaw > 0 ? unitRaw : undefined;
     const rawKind = o.kind_slug;
     const kind_slug =
       typeof rawKind === "string" && rawKind.trim().length > 0 ? rawKind.trim() : null;
     if (!name && price === 0) continue;
-    if (name) out.push({ name, price, kind_slug });
+    if (name) {
+      const line: ServicePartLine = { name, price, kind_slug };
+      if (qty != null) line.qty = qty;
+      if (unit_price != null) line.unit_price = unit_price;
+      out.push(line);
+    }
   }
   return out;
 }
@@ -321,12 +332,17 @@ export function mapServiceRecord(row: {
   serviced_at: string;
   created_at: string;
   parts?: unknown;
+  receipt_path?: string | null;
 }): ServiceRecord {
   const serviced =
     typeof row.serviced_at === "string" && row.serviced_at.length >= 10
       ? row.serviced_at.slice(0, 10)
       : row.serviced_at;
   const loc = typeof row.location === "string" ? row.location.trim() : "";
+  const receipt =
+    typeof row.receipt_path === "string" && row.receipt_path.trim().length > 0
+      ? row.receipt_path.trim()
+      : null;
   return {
     id: row.id,
     vehicle_id: row.vehicle_id,
@@ -339,6 +355,7 @@ export function mapServiceRecord(row: {
     serviced_at: serviced,
     created_at: row.created_at,
     parts: parseServiceParts(row.parts),
+    receipt_path: receipt,
   };
 }
 

@@ -4,15 +4,19 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import {
+  createServiceReceiptSignedUrl,
   deleteServiceRecord,
   fetchKnownServiceLocations,
   fetchServiceRecordsForVehicle,
   fetchVehicleDetail,
   insertMileage,
   insertServiceRecord,
+  removeServiceReceipt,
   resetRemindersAfterServiceRecord,
   restoreReminderFromReset,
   updateServiceRecord,
+  updateServiceRecordReceiptPath,
+  uploadServiceReceipt,
 } from "@/lib/supabase";
 import { getReminderPreset } from "@/lib/reminder-presets";
 import type { ServicePartLine, ServiceRecord, VehicleDetail } from "@/lib/types";
@@ -20,6 +24,10 @@ import { DetailSkeleton } from "@/components/LoadingSkeleton";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import SwipeableRow from "@/components/SwipeableRow";
 import { partKindsForChips, type PartKind } from "@/lib/part-kinds";
+import type { NotaScanResult } from "@/lib/nota-normalize";
+import { scanNotaFromFile } from "@/lib/nota-scan";
+import { mapNotaItemsToFormParts } from "@/lib/nota-item-classify";
+import ServiceNotaHero, { type ServiceNotaPhase } from "@/components/ServiceNotaHero";
 import { toast } from "sonner";
 
 /**
@@ -35,6 +43,11 @@ type ServiceChip = "light" | "heavy" | "oil_change";
 type PartLine = {
   key: string;
   name: string;
+  /** Digit string; default "1". */
+  qty: string;
+  /** Digit string — harga satuan. */
+  unit_price: string;
+  /** Digit string — total baris (qty × unit_price), derived on edit. */
   price: string;
   /** Tag standar dari chip "Tambah cepat". Null untuk free-text manual. */
   kind_slug: string | null;
@@ -45,7 +58,27 @@ function newPartLine(overrides?: Partial<Omit<PartLine, "key">>): PartLine {
     typeof crypto !== "undefined" && "randomUUID" in crypto
       ? crypto.randomUUID()
       : `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-  return { key, name: "", price: "", kind_slug: null, ...overrides };
+  const base: PartLine = {
+    key,
+    name: "",
+    qty: "1",
+    unit_price: "",
+    price: "",
+    kind_slug: null,
+  };
+  const merged = { ...base, ...overrides, key };
+  if (overrides?.unit_price != null || overrides?.qty != null) {
+    merged.price = derivedLineTotal(merged.qty, merged.unit_price, merged.price);
+  }
+  return merged;
+}
+
+/** qty × unit_price as digit string; falls back to existing price if unit empty. */
+function derivedLineTotal(qtyStr: string, unitPriceStr: string, fallbackPrice = ""): string {
+  const qty = Math.max(1, parseInt(digitsOnly(qtyStr, 6), 10) || 1);
+  const unit = parseInt(digitsOnly(unitPriceStr, 12), 10) || 0;
+  if (unit > 0) return String(qty * unit);
+  return digitsOnly(fallbackPrice, 12);
 }
 
 function todayISODate() {
@@ -119,15 +152,23 @@ function defaultForm() {
 
 function recordToPartLines(parts: ServicePartLine[]): PartLine[] {
   if (!parts.length) return [];
-  return parts.map((p) => ({
-    key:
-      typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random()}`,
-    name: p.name,
-    price: p.price > 0 ? String(p.price) : "",
-    kind_slug: p.kind_slug ?? null,
-  }));
+  return parts.map((p) => {
+    const qty = p.qty != null && p.qty > 0 ? p.qty : 1;
+    const unit =
+      p.unit_price != null && p.unit_price > 0
+        ? p.unit_price
+        : p.price > 0
+          ? Math.round(p.price / qty)
+          : 0;
+    const total = p.price > 0 ? p.price : unit * qty;
+    return newPartLine({
+      name: p.name,
+      qty: String(qty),
+      unit_price: unit > 0 ? String(unit) : "",
+      price: total > 0 ? String(total) : "",
+      kind_slug: p.kind_slug ?? null,
+    });
+  });
 }
 
 /**
@@ -147,11 +188,23 @@ function focusAndScrollById(id: string, delayMs = 80): void {
 
 function normalizePartLines(lines: PartLine[]): ServicePartLine[] {
   return lines
-    .map((l) => ({
-      name: l.name.trim(),
-      price: Math.max(0, parseInt(digitsOnly(l.price, 12), 10) || 0),
-      kind_slug: l.kind_slug ?? null,
-    }))
+    .map((l) => {
+      const qty = Math.max(1, parseInt(digitsOnly(l.qty, 6), 10) || 1);
+      const unit_price = Math.max(0, parseInt(digitsOnly(l.unit_price, 12), 10) || 0);
+      const derived = unit_price > 0 ? qty * unit_price : 0;
+      const fallback = Math.max(0, parseInt(digitsOnly(l.price, 12), 10) || 0);
+      const price = derived > 0 ? derived : fallback;
+      const line: ServicePartLine = {
+        name: l.name.trim(),
+        price,
+        kind_slug: l.kind_slug ?? null,
+      };
+      if (qty !== 1 || unit_price > 0) {
+        line.qty = qty;
+        line.unit_price = unit_price > 0 ? unit_price : price;
+      }
+      return line;
+    })
     .filter((l) => l.name.length > 0);
 }
 
@@ -213,7 +266,7 @@ const QUICK_CHIPS: ReadonlyArray<{ id: ServiceChip; label: string }> = [
 
 /** Field input filled-style — single source kelas supaya konsisten lintas form. */
 const inputClass =
-  "w-full rounded-xl bg-(--color-surface) px-4 py-3 text-sm text-(--color-text) outline-none placeholder:text-(--color-text-muted)/80 ring-1 ring-(--color-border)/40 focus:ring-2 focus:ring-(--color-primary)/40 transition-all duration-150";
+  "w-full rounded-xl bg-(--color-bg) px-4 py-3 text-sm text-(--color-text) outline-none placeholder:text-(--color-text-muted)/80 ring-1 ring-(--color-border)/40 focus:ring-2 focus:ring-(--color-primary)/40 transition-all duration-150";
 
 /**
  * CTA "Tambah servis" — pakai pola dashed-border tile yang sama dengan
@@ -280,6 +333,7 @@ export default function ServiceHistoryPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const modalKmRef = useRef<HTMLInputElement>(null);
+  const modalScrollRef = useRef<HTMLDivElement>(null);
   const [detail, setDetail] = useState<VehicleDetail | null>(null);
   const [records, setRecords] = useState<ServiceRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -327,6 +381,16 @@ export default function ServiceHistoryPage() {
   });
   const oilEnginePriceRef = useRef<HTMLInputElement>(null);
   const oilGearboxPriceRef = useRef<HTMLInputElement>(null);
+  /** File nota yang akan di-upload ke Storage saat Simpan (hasil Kamera/PDF). */
+  const [pendingReceiptFile, setPendingReceiptFile] = useState<File | null>(null);
+  /** Path nota yang sudah tersimpan (saat edit). */
+  const [existingReceiptPath, setExistingReceiptPath] = useState<string | null>(null);
+  const [ocrPhase, setOcrPhase] = useState<ServiceNotaPhase>("idle");
+  const [ocrError, setOcrError] = useState<string | null>(null);
+  const [ocrDetectedDate, setOcrDetectedDate] = useState<string | null>(null);
+  const [ocrDetectedKm, setOcrDetectedKm] = useState<number | null>(null);
+  const [expandedPartKey, setExpandedPartKey] = useState<string | null>(null);
+  const [partSearch, setPartSearch] = useState("");
   const [selectedRecord, setSelectedRecord] = useState<ServiceRecord | null>(null);
   /**
    * Record yang sedang di-konfirmasi untuk dihapus. `null` = tidak ada
@@ -455,6 +519,14 @@ export default function ServiceHistoryPage() {
     setRemovingKey(null);
     setOilPrices({ engine: "", gearbox: "" });
     setChipPick("light");
+    setPendingReceiptFile(null);
+    setExistingReceiptPath(null);
+    setOcrPhase("idle");
+    setOcrError(null);
+    setOcrDetectedDate(null);
+    setOcrDetectedKm(null);
+    setExpandedPartKey(null);
+    setPartSearch("");
   }, []);
 
   const openAddModal = useCallback(() => {
@@ -466,6 +538,14 @@ export default function ServiceHistoryPage() {
     setRemovingKey(null);
     setOilPrices({ engine: "", gearbox: "" });
     setChipPick("light");
+    setPendingReceiptFile(null);
+    setExistingReceiptPath(null);
+    setOcrPhase("idle");
+    setOcrError(null);
+    setOcrDetectedDate(null);
+    setOcrDetectedKm(null);
+    setExpandedPartKey(null);
+    setPartSearch("");
     setAddModalOpen(true);
   }, []);
 
@@ -490,7 +570,11 @@ export default function ServiceHistoryPage() {
       const slugExists = rows.some((r) => r.kind_slug === kind.slug);
       if (slugExists) return rows;
       const emptyIdx = rows.findIndex(
-        (r) => r.name.trim() === "" && r.price.trim() === "" && r.kind_slug == null,
+        (r) =>
+          r.name.trim() === "" &&
+          r.unit_price.trim() === "" &&
+          r.price.trim() === "" &&
+          r.kind_slug == null,
       );
       if (emptyIdx !== -1) {
         targetKey = rows[emptyIdx].key;
@@ -502,17 +586,113 @@ export default function ServiceHistoryPage() {
       targetKey = fresh.key;
       return [...rows, fresh];
     });
-    if (targetKey) focusAndScrollById(`part-price-${targetKey}`);
+    if (targetKey) focusAndScrollById(`part-unit-${targetKey}`);
   }, []);
 
   /**
    * Tambah baris kosong manual (tombol "+ Tambah part lain").
-   * Auto-focus name input — chip pakai jalur lain (focus price).
+   * Auto-focus name input — chip pakai jalur lain (focus unit price).
    */
   const addBlankPart = useCallback(() => {
     const fresh = newPartLine();
     setPartLines((rows) => [...rows, fresh]);
     focusAndScrollById(`part-name-${fresh.key}`);
+  }, []);
+
+  /**
+   * Map hasil OCR nota → form:
+   * - klasifikasi kind (Gemini + keyword safety) → oli flag / kind_slug / free-text
+   * - simpan File untuk upload Storage saat Simpan
+   */
+  const applyNotaScanResult = useCallback((result: NotaScanResult, file: File) => {
+    setPendingReceiptFile(file);
+    setPartsOpen(true);
+    setAdvancedOpen(true);
+
+    const mapped = mapNotaItemsToFormParts(result.items);
+    const lines = mapped.partLines.map((p) =>
+      newPartLine({
+        name: p.name,
+        qty: p.qty,
+        unit_price: p.unit_price,
+        price: p.price,
+        kind_slug: p.kind_slug,
+      }),
+    );
+    setPartLines(lines);
+    setOilPrices(mapped.oilPrices);
+    setExpandedPartKey(null);
+    setOcrDetectedDate(result.serviced_at);
+    setOcrDetectedKm(result.odometer_km);
+
+    // Chip intent: murni oli → "Ganti oli"; ada part lain → ringan (default).
+    const onlyOil =
+      mapped.partLines.length === 0 &&
+      (mapped.changed_engine_oil || mapped.changed_gearbox_oil);
+    setChipPick(onlyOil ? "oil_change" : "light");
+
+    setForm((f) => {
+      const next = { ...f };
+      if (result.workshop) next.location = result.workshop;
+      if (result.serviced_at) next.serviced_at = result.serviced_at;
+      if (result.odometer_km != null && result.odometer_km > 0) {
+        next.mileage_at_service = String(result.odometer_km);
+      }
+      next.changed_engine_oil = mapped.changed_engine_oil;
+      next.changed_gearbox_oil = mapped.changed_gearbox_oil;
+      if (onlyOil) {
+        next.service_type = "light";
+      }
+      return next;
+    });
+
+    if (result.items.length === 0) {
+      setOcrPhase("empty");
+      setOcrError("AI tidak menemukan baris part di nota ini.");
+    } else {
+      setOcrPhase("success");
+      setOcrError(null);
+      const oilBits = [
+        mapped.changed_engine_oil ? "oli mesin" : null,
+        mapped.changed_gearbox_oil ? "oli gardan" : null,
+      ].filter(Boolean);
+      const tagged = mapped.partLines.filter((p) => p.kind_slug).length;
+      const hint = [
+        oilBits.length ? oilBits.join(" + ") : null,
+        tagged > 0 ? `${tagged} part terklasifikasi` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      if (hint) {
+        toast.message("Mapping part dari nota", { description: hint });
+      }
+    }
+  }, []);
+
+  const handleNotaFilePick = useCallback(
+    async (file: File) => {
+      setPendingReceiptFile(file);
+      setOcrPhase("processing");
+      setOcrError(null);
+      setOcrDetectedDate(null);
+      setOcrDetectedKm(null);
+      try {
+        const result = await scanNotaFromFile(file);
+        applyNotaScanResult(result, file);
+      } catch (err) {
+        setOcrPhase("error");
+        setOcrError(err instanceof Error ? err.message : "Gagal membaca nota");
+      }
+    },
+    [applyNotaScanResult],
+  );
+
+  const clearNotaFile = useCallback(() => {
+    setPendingReceiptFile(null);
+    setOcrPhase("idle");
+    setOcrError(null);
+    setOcrDetectedDate(null);
+    setOcrDetectedKm(null);
   }, []);
 
   /**
@@ -563,6 +743,13 @@ export default function ServiceHistoryPage() {
     setRecords((prev) => prev.filter((x) => x.id !== target.id));
 
     try {
+      if (target.receipt_path) {
+        try {
+          await removeServiceReceipt(target.receipt_path);
+        } catch (storageErr) {
+          console.warn("Failed to remove receipt from storage:", storageErr);
+        }
+      }
       await deleteServiceRecord(id, target.id);
       toast.success("Riwayat servis dihapus");
     } catch (err) {
@@ -577,6 +764,14 @@ export default function ServiceHistoryPage() {
   const openEditModal = useCallback((r: ServiceRecord) => {
     setSelectedRecord(null);
     setEditingId(r.id);
+    setPendingReceiptFile(null);
+    setExistingReceiptPath(r.receipt_path ?? null);
+    setOcrPhase("idle");
+    setOcrError(null);
+    setOcrDetectedDate(null);
+    setOcrDetectedKm(null);
+    setExpandedPartKey(null);
+    setPartSearch("");
     setForm({
       serviced_at: r.serviced_at,
       mileage_at_service: String(r.mileage_at_service),
@@ -656,9 +851,13 @@ export default function ServiceHistoryPage() {
     };
   }, [user, id, router, load]);
 
+  /** AI upload hero di atas — jangan auto-focus KM (itu men-scroll sheet
+   *  ke field odometer dan menyembunyikan area upload). Reset scroll ke top. */
   useEffect(() => {
     if (!addModalOpen) return;
-    const t = window.setTimeout(() => modalKmRef.current?.focus(), 80);
+    const t = window.setTimeout(() => {
+      if (modalScrollRef.current) modalScrollRef.current.scrollTop = 0;
+    }, 0);
     return () => window.clearTimeout(t);
   }, [addModalOpen]);
 
@@ -820,6 +1019,36 @@ export default function ServiceHistoryPage() {
         saved = await insertServiceRecord(id as string, payload);
         toast.success("Riwayat servis tersimpan");
       }
+
+      // Upload nota ke Storage setelah record punya id (path memakai recordId).
+      // Gagal upload tidak rollback record — user tetap punya data servis.
+      if (pendingReceiptFile) {
+        try {
+          const previousPath = existingReceiptPath;
+          const path = await uploadServiceReceipt({
+            vehicleId: id as string,
+            recordId: saved.id,
+            file: pendingReceiptFile,
+          });
+          await updateServiceRecordReceiptPath(id as string, saved.id, path);
+          saved = { ...saved, receipt_path: path };
+          if (previousPath && previousPath !== path) {
+            try {
+              await removeServiceReceipt(previousPath);
+            } catch (cleanupErr) {
+              console.warn("Failed to remove replaced receipt:", cleanupErr);
+            }
+          }
+        } catch (uploadErr) {
+          console.warn("Failed to upload service receipt:", uploadErr);
+          toast.warning(
+            uploadErr instanceof Error
+              ? `Servis tersimpan, tapi nota gagal diunggah: ${uploadErr.message}`
+              : "Servis tersimpan, tapi nota gagal diunggah",
+          );
+        }
+      }
+
       // Side effect: kalau KM service > KM saat ini, treat as new
       // mileage data point. Trigger DB (`enforce_mileage_monotonic` +
       // `sync_vehicle_current_mileage`) yang akan handle:
@@ -939,36 +1168,47 @@ export default function ServiceHistoryPage() {
             </header>
 
             {records.length === 0 ? (
-              // Empty state — flex-1 + items/justify-center membuatnya
-              // berada di tengah area konten (di bawah header) sampai
-              // sebelum BottomNav. Heading "Riwayat servis" sengaja
-              // di-skip karena duplikat dengan judul page besar.
-              <div className="flex flex-1 flex-col items-center justify-center">
-                <div className="flex w-full max-w-sm flex-col items-center gap-4 rounded-xl border border-dashed border-(--color-border) bg-(--color-surface)/80 px-6 py-10 text-center">
-                  <div
-                    className="flex h-14 w-14 items-center justify-center rounded-2xl bg-(--color-primary-soft) text-(--color-primary)"
-                    aria-hidden
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-7 w-7">
-                      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
-                    </svg>
+              <div className="flex flex-1 flex-col items-center justify-center px-1 py-6 sm:py-10">
+                <button
+                  type="button"
+                  onClick={openAddModal}
+                  aria-label="Tambah servis"
+                  className="group flex w-full max-w-[280px] flex-col items-center rounded-[1.75rem] border border-(--color-border) bg-(--color-surface) p-6 pb-7 text-center shadow-sm ring-1 ring-black/[0.03] transition-all hover:border-(--color-primary)/35 hover:shadow-md hover:ring-(--color-primary)/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-primary) focus-visible:ring-offset-2 focus-visible:ring-offset-(--color-bg) active:scale-[0.98] dark:ring-white/[0.04]"
+                >
+                  <div className="mb-5 flex h-[7.25rem] w-full max-w-[200px] items-center justify-center rounded-2xl border-2 border-dashed border-(--color-primary)/35 bg-(--color-primary-soft) transition-colors group-hover:border-(--color-primary)/55 group-hover:bg-(--color-primary)/15">
+                    <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-(--color-primary) text-white shadow-lg shadow-(--color-primary)/35 transition-transform group-hover:scale-105 group-active:scale-95">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth={2.25}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="h-11 w-11"
+                        aria-hidden
+                      >
+                        <line x1="12" y1="5" x2="12" y2="19" />
+                        <line x1="5" y1="12" x2="19" y2="12" />
+                      </svg>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-base font-bold text-(--color-text)">Belum ada riwayat servis</p>
-                    <p className="mt-1 text-sm text-(--color-text-secondary)">Tambahkan servis pertama kendaraanmu</p>
-                  </div>
-                  <AddServiceButton onClick={openAddModal} label="Tambah servis" />
-                </div>
+                  <h2 className="text-lg font-bold tracking-tight text-(--color-text)">
+                    Belum ada riwayat servis
+                  </h2>
+                  <p className="mt-2 text-sm leading-relaxed text-(--color-text-secondary)">
+                    Catat servis pertama kendaraanmu — part, biaya, dan ganti oli bisa diisi sekaligus.
+                  </p>
+                  <span className="mt-5 inline-flex items-center gap-1.5 text-sm font-semibold text-(--color-primary)">
+                    <span className="rounded-lg bg-(--color-primary-soft) px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-(--color-primary)">
+                      + Tambah servis
+                    </span>
+                  </span>
+                </button>
               </div>
             ) : (
               <section className="space-y-4">
                 <h2 className="text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)">Riwayat servis</h2>
-                {/*
-                  Memakai <div role="list"> alih-alih <ul>/<li> agar SwipeableRow
-                  (yang merender <div> sendiri) tidak menghasilkan markup
-                  <ul><div>...</div></ul> yang invalid. Semantic list dipertahankan
-                  via ARIA roles, dan polanya konsisten dengan halaman Overview.
-                */}
                 <div role="list" className="flex flex-col gap-4">
                   {records.map((r) => {
                     const total = totalFromRecord(r);
@@ -1108,11 +1348,11 @@ export default function ServiceHistoryPage() {
           />
           {/* max-h 80dvh per spec ("Maks tinggi: 80% layar"). Modal pakai
               shadow-2xl tanpa border supaya kesan ringan & modern. */}
-          <div className="relative z-10 flex max-h-[80dvh] w-full max-w-md flex-col rounded-t-2xl bg-(--color-bg) shadow-2xl sm:mx-4 sm:rounded-2xl">
+          <div className="relative z-10 flex max-h-[80dvh] w-full max-w-md flex-col overflow-hidden rounded-t-2xl bg-(--color-bg) shadow-2xl sm:mx-4 sm:rounded-2xl">
             <div className="flex shrink-0 items-start justify-between gap-3 border-b border-(--color-border)/60 px-5 py-4">
               <div>
                 <h2 id="add-service-title" className="text-lg font-extrabold text-(--color-text)">
-                  {editingId ? "Ubah servis" : "Tambah servis"}
+                  {editingId ? "Ubah servis" : "Record service"}
                 </h2>
                 {detail ? (
                   <p className="mt-0.5 text-xs text-(--color-text-secondary)">{detail.vehicle.name}</p>
@@ -1131,22 +1371,46 @@ export default function ServiceHistoryPage() {
             </div>
 
             <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
-              <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-5 py-5 pb-24">
-                {/* ===== QUICK ADD — selalu tampil. Cukup KM + chip = valid record. ===== */}
+              {/* space-y (bukan flex-col) supaya child tidak di-shrink saat scroll. */}
+              <div
+                ref={modalScrollRef}
+                className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-5 py-4 pb-6"
+              >
+                <ServiceNotaHero
+                  phase={ocrPhase}
+                  fileName={pendingReceiptFile?.name ?? null}
+                  itemCount={normalizePartLines(partLines).length}
+                  detectedDateLabel={
+                    ocrDetectedDate ? formatServiceDate(ocrDetectedDate) : null
+                  }
+                  detectedKmLabel={
+                    ocrDetectedKm != null ? `${formatKm(ocrDetectedKm)} km` : null
+                  }
+                  estimatedTotalLabel={
+                    sumParts(normalizePartLines(partLines)) > 0
+                      ? formatIdr(sumParts(normalizePartLines(partLines)))
+                      : null
+                  }
+                  errorMessage={ocrError}
+                  hasStoredReceipt={!!existingReceiptPath}
+                  disabled={saving}
+                  onPickFile={(file) => void handleNotaFilePick(file)}
+                  onClearFile={clearNotaFile}
+                  onRetry={clearNotaFile}
+                />
 
-                <div>
-                  <div className="flex items-center justify-between gap-2">
-                    <label
-                      htmlFor="modal-km"
-                      className="text-[10px] font-bold text-(--color-text-muted)"
-                    >
-                      KM odometer
-                    </label>
-                    {currentKm > 0 ? (
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-semibold tabular-nums text-(--color-text-muted)">
-                          Saat ini: {formatKm(currentKm)}
-                        </span>
+                {/* Manual service info — secondary to AI result */}
+                <section className="space-y-3">
+                  <h3 className="text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)">
+                    Service information
+                  </h3>
+
+                  <div>
+                    <div className="flex items-center justify-between gap-2">
+                      <label htmlFor="modal-km" className="text-[10px] font-bold text-(--color-text-muted)">
+                        Odometer
+                      </label>
+                      {currentKm > 0 ? (
                         <button
                           type="button"
                           onClick={() =>
@@ -1155,543 +1419,451 @@ export default function ServiceHistoryPage() {
                               mileage_at_service: String(currentKm),
                             }))
                           }
-                          className="text-[10px] font-bold uppercase tracking-wide text-(--color-primary) transition-opacity hover:opacity-80 active:opacity-60"
-                          aria-label={`Set KM ke ${formatKm(currentKm)}`}
+                          className="text-[10px] font-bold uppercase tracking-wide text-(--color-primary)"
                         >
-                          SET
+                          SET {formatKm(currentKm)}
                         </button>
-                      </div>
+                      ) : null}
+                    </div>
+                    <div className="relative mt-1.5">
+                      <input
+                        ref={modalKmRef}
+                        id="modal-km"
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="off"
+                        pattern="[0-9]*"
+                        value={form.mileage_at_service}
+                        onChange={(e) =>
+                          setForm({ ...form, mileage_at_service: digitsOnly(e.target.value, 9) })
+                        }
+                        onKeyDown={(e) => {
+                          const nav = ["Backspace", "Delete", "Tab", "Escape", "Enter", "ArrowLeft", "ArrowRight", "Home", "End"];
+                          if (nav.includes(e.key) || e.ctrlKey || e.metaKey || e.altKey) return;
+                          if (/^\d$/.test(e.key)) return;
+                          e.preventDefault();
+                        }}
+                        aria-invalid={kmError !== null && form.mileage_at_service.trim() !== ""}
+                        className={`${inputClass} py-3.5 pr-12 text-base font-semibold tabular-nums ${
+                          kmError && form.mileage_at_service.trim() !== ""
+                            ? "ring-red-400 focus:ring-red-400/60"
+                            : ""
+                        }`}
+                        placeholder="Misal: 12500"
+                      />
+                      <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xs font-semibold uppercase tracking-wide text-(--color-text-muted)" aria-hidden>
+                        km
+                      </span>
+                    </div>
+                    {kmError && form.mileage_at_service.trim() !== "" ? (
+                      <p className="mt-1.5 text-[11px] font-semibold text-red-600 dark:text-red-400">{kmError}</p>
                     ) : null}
                   </div>
-                  <div className="relative mt-1.5">
-                    <input
-                      ref={modalKmRef}
-                      id="modal-km"
-                      type="text"
-                      inputMode="numeric"
-                      autoComplete="off"
-                      pattern="[0-9]*"
-                      value={form.mileage_at_service}
-                      onChange={(e) =>
-                        setForm({ ...form, mileage_at_service: digitsOnly(e.target.value, 9) })
-                      }
-                      onKeyDown={(e) => {
-                        const nav = [
-                          "Backspace",
-                          "Delete",
-                          "Tab",
-                          "Escape",
-                          "Enter",
-                          "ArrowLeft",
-                          "ArrowRight",
-                          "Home",
-                          "End",
-                        ];
-                        if (nav.includes(e.key) || e.ctrlKey || e.metaKey || e.altKey) return;
-                        if (/^\d$/.test(e.key)) return;
-                        e.preventDefault();
-                      }}
-                      aria-invalid={kmError !== null && form.mileage_at_service.trim() !== ""}
-                      aria-describedby={kmError ? "modal-km-error" : undefined}
-                      className={`${inputClass} py-3.5 pr-12 text-base font-semibold tabular-nums ${kmError && form.mileage_at_service.trim() !== ""
-                          ? "ring-red-400 focus:ring-red-400/60"
-                          : ""
-                        }`}
-                      placeholder="Misal: 12500"
-                    />
-                    <span
-                      className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xs font-semibold uppercase tracking-wide text-(--color-text-muted)"
-                      aria-hidden
-                    >
-                      km
-                    </span>
-                  </div>
-                  {/* Inline error: hanya tampil setelah user mulai ngetik —
-                      hindari "wajib" muncul di state initial yang masih kosong. */}
-                  {kmError && form.mileage_at_service.trim() !== "" ? (
-                    <p
-                      id="modal-km-error"
-                      className="mt-1.5 text-[11px] font-semibold text-red-600 dark:text-red-400"
-                    >
-                      {kmError}
-                    </p>
-                  ) : null}
-                </div>
 
-                {/* Tanggal + Lokasi — metadata "kapan & di mana". Bukan
-                    detail opsional, jadi taruh di Quick (bukan di balik
-                    "Tambahkan detail"). Default tanggal = hari ini. */}
-                <div>
-                  <label className="text-[10px] font-bold text-(--color-text-muted)">
-                    Tanggal
-                  </label>
-                  <input
-                    type="date"
-                    required
-                    value={form.serviced_at}
-                    onChange={(e) => setForm({ ...form, serviced_at: e.target.value })}
-                    className={`${inputClass} mt-1.5`}
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="modal-location"
-                    className="text-[10px] font-bold text-(--color-text-muted)"
-                  >
-                    Lokasi <span className="font-medium normal-case text-(--color-text-muted)/80">(opsional)</span>
-                  </label>
-                  <div className="relative mt-1.5">
-                    <span
-                      className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-(--color-text-muted)"
-                      aria-hidden
-                    >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.6"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        className="h-4 w-4"
-                      >
-                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 1 1 18 0z" />
-                        <circle cx="12" cy="10" r="3" />
-                      </svg>
-                    </span>
+                  <div>
+                    <label className="text-[10px] font-bold text-(--color-text-muted)">Date</label>
                     <input
-                      id="modal-location"
-                      type="text"
-                      autoComplete="off"
-                      list="service-location-suggestions"
-                      value={form.location}
-                      onChange={(e) => setForm({ ...form, location: e.target.value })}
-                      maxLength={120}
-                      placeholder="Mis. AHASS Cibubur"
-                      className={`${inputClass} pl-10`}
+                      type="date"
+                      required
+                      value={form.serviced_at}
+                      onChange={(e) => setForm({ ...form, serviced_at: e.target.value })}
+                      className={`${inputClass} mt-1.5`}
                     />
                   </div>
-                  {locationSuggestions.length > 0 ? (
-                    <datalist id="service-location-suggestions">
-                      {locationSuggestions.map((loc) => (
-                        <option key={loc} value={loc} />
-                      ))}
-                    </datalist>
-                  ) : null}
-                </div>
 
-                <div>
-                  <span className="text-[10px] font-bold text-(--color-text-muted)">
-                    Jenis servis
-                  </span>
-                  <div
-                    role="radiogroup"
-                    aria-label="Jenis servis"
-                    className="mt-2 flex flex-wrap gap-2"
-                  >
-                    {QUICK_CHIPS.map((c) => {
-                      const isActive = activeChip === c.id;
-                      return (
-                        <button
-                          key={c.id}
-                          type="button"
-                          role="radio"
-                          aria-checked={isActive}
-                          onClick={() => applyChip(c.id)}
-                          className={`rounded-full px-3.5 py-2 text-xs font-bold ring-1 transition-all duration-150 ${btnPress} ${isActive
-                              ? "bg-(--color-primary-soft) text-(--color-primary) ring-(--color-primary)/45 shadow-sm"
-                              : "bg-(--color-surface) text-(--color-text-secondary) ring-(--color-border)/40 hover:ring-(--color-primary)/40"
-                            }`}
-                        >
-                          {c.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* ===== Ganti oli — selalu tampil di Quick.
-                    Tampak prominent saat chip "Ganti oli" aktif (auto-tick),
-                    tetap accessible saat chip ringan/besar untuk kombinasi
-                    servis + ganti oli. Setiap baris: checkbox + price
-                    inline. Price input hanya muncul saat checkbox aktif. */}
-                <fieldset
-                  className={`flex flex-col gap-2.5 rounded-2xl p-4 shadow-sm transition-colors duration-200 ${activeChip === "oil_change"
-                      ? "bg-(--color-primary-soft)/40 ring-1 ring-(--color-primary)/30"
-                      : "bg-(--color-surface)/60"
-                    }`}
-                >
-                  <legend className="px-1 text-[10px] font-bold uppercase tracking-wide text-(--color-text-muted)">
-                    Ganti oli
-                    {activeChip !== "oil_change" && (
-                      <span className="ml-1 text-[10px] font-medium normal-case text-(--color-text-muted)/80">
-                        (opsional)
+                  <div>
+                    <label htmlFor="modal-location" className="text-[10px] font-bold text-(--color-text-muted)">
+                      Workshop location
+                    </label>
+                    <div className="relative mt-1.5">
+                      <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-(--color-text-muted)" aria-hidden>
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" className="h-4 w-4">
+                          <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 1 1 18 0z" />
+                          <circle cx="12" cy="10" r="3" />
+                        </svg>
                       </span>
-                    )}
-                  </legend>
-
-                  {(
-                    [
-                      {
-                        which: "engine" as const,
-                        flagKey: "changed_engine_oil" as const,
-                        label: "Oli mesin",
-                        priceRef: oilEnginePriceRef,
-                        priceId: "modal-oil-engine-price",
-                        // Engine row selalu tampil — semua kategori motor
-                        // punya oli mesin.
-                        visible: true,
-                      },
-                      {
-                        which: "gearbox" as const,
-                        flagKey: "changed_gearbox_oil" as const,
-                        label: "Oli gardan",
-                        priceRef: oilGearboxPriceRef,
-                        priceId: "modal-oil-gearbox-price",
-                        // Gearbox row hanya muncul untuk kategori yang
-                        // punya interval gardan (matic). Untuk record
-                        // legacy yang sudah ter-tick, tetap tampilkan
-                        // supaya user bisa edit/uncheck.
-                        visible: hasGearboxInterval || form.changed_gearbox_oil,
-                      },
-                    ] as const
-                  )
-                    .filter((row) => row.visible)
-                    .map((row) => {
-                      const active = form[row.flagKey];
-                      return (
-                        <div
-                          key={row.which}
-                          className={`flex items-center gap-2 rounded-xl bg-(--color-bg) px-3 py-2 ring-1 transition-all duration-150 ${active
-                              ? "ring-(--color-primary)/45"
-                              : "ring-(--color-border)/40"
-                            }`}
-                        >
-                          {/* Checkbox + label di kiri (flex-1 supaya nggak nge-push
-                              price input saat row width berubah). Price input di
-                              kanan, hanya tampil saat checkbox aktif — biar hemat
-                              space dan satu baris saja. */}
-                          <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 text-sm">
-                            <input
-                              type="checkbox"
-                              checked={active}
-                              onChange={(e) => toggleOilFlag(row.which, e.target.checked)}
-                              className="h-4 w-4 shrink-0 cursor-pointer accent-(--color-primary)"
-                            />
-                            <span
-                              className={`truncate font-semibold ${active ? "text-(--color-primary)" : "text-(--color-text)"
-                                }`}
-                            >
-                              {row.label}
-                            </span>
-                          </label>
-                          {active && (
-                            <div className="relative w-32 shrink-0 sm:w-36">
-                              <label className="sr-only" htmlFor={row.priceId}>
-                                Harga {row.label.toLowerCase()}
-                              </label>
-                              <span
-                                className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-semibold text-(--color-text-muted)"
-                                aria-hidden
-                              >
-                                Rp
-                              </span>
-                              <input
-                                ref={row.priceRef}
-                                id={row.priceId}
-                                type="text"
-                                inputMode="numeric"
-                                autoComplete="off"
-                                value={formatThousandsId(oilPrices[row.which])}
-                                onChange={(e) =>
-                                  setOilPrices((p) => ({
-                                    ...p,
-                                    [row.which]: digitsOnly(e.target.value, 12),
-                                  }))
-                                }
-                                placeholder="0"
-                                className={`${inputClass} py-2 pl-8 pr-2 text-right tabular-nums`}
-                              />
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-
-                  {/* Subtotal oli — tampil hanya saat ada nilai untuk ngasih
-                      sense biaya total, tanpa noise saat kosong. */}
-                  {(() => {
-                    const eng = form.changed_engine_oil
-                      ? parseInt(digitsOnly(oilPrices.engine, 12), 10) || 0
-                      : 0;
-                    const gear = form.changed_gearbox_oil
-                      ? parseInt(digitsOnly(oilPrices.gearbox, 12), 10) || 0
-                      : 0;
-                    const total = eng + gear;
-                    if (total <= 0) return null;
-                    return (
-                      <p className="px-1 pt-1 text-xs font-bold tabular-nums text-(--color-text)">
-                        Subtotal oli: {formatIdr(total)}
-                      </p>
-                    );
-                  })()}
-                </fieldset>
-
-                {/* ===== ADVANCED toggle ===== */}
-                {!advancedOpen ? (
-                  <button
-                    type="button"
-                    onClick={() => setAdvancedOpen(true)}
-                    className={`flex w-full items-center justify-center gap-1.5 rounded-xl bg-(--color-surface) px-4 py-3 text-xs font-bold text-(--color-text-secondary) shadow-sm transition-all duration-200 hover:text-(--color-primary) hover:shadow-md ${btnPress}`}
-                  >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      className="h-4 w-4"
-                      aria-hidden
-                    >
-                      <path d="M12 5v14M5 12h14" />
-                    </svg>
-                    Tambahkan detail
-                  </button>
-                ) : (
-                  <section
-                    aria-label="Detail tambahan"
-                    className="flex flex-col gap-4 rounded-2xl bg-(--color-surface)/50 p-4 shadow-sm"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[10px] font-bold uppercase tracking-wide text-(--color-text-muted)">
-                        Detail tambahan
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setAdvancedOpen(false)}
-                        className={`rounded-full bg-(--color-primary-soft) px-2.5 py-1 text-[11px] font-semibold text-(--color-primary) transition-all duration-150 hover:brightness-95 ${btnPress}`}
-                      >
-                        Sembunyikan
-                      </button>
-                    </div>
-
-                    {/* Catatan */}
-                    <div>
-                      <label className="text-[10px] font-bold uppercase tracking-wide text-(--color-text-muted)">
-                        Catatan
-                      </label>
-                      <textarea
-                        value={form.description}
-                        onChange={(e) => setForm({ ...form, description: e.target.value })}
-                        rows={2}
-                        className={`${inputClass} mt-1.5 resize-none`}
-                        placeholder="Kondisi, keluhan, dll."
+                      <input
+                        id="modal-location"
+                        type="text"
+                        autoComplete="off"
+                        list="service-location-suggestions"
+                        value={form.location}
+                        onChange={(e) => setForm({ ...form, location: e.target.value })}
+                        maxLength={120}
+                        placeholder="Mis. AHASS Cibubur"
+                        className={`${inputClass} pl-10`}
                       />
                     </div>
+                    {locationSuggestions.length > 0 ? (
+                      <datalist id="service-location-suggestions">
+                        {locationSuggestions.map((loc) => (
+                          <option key={loc} value={loc} />
+                        ))}
+                      </datalist>
+                    ) : null}
+                  </div>
 
-                    {/* Parts — nested collapse, default tertutup. Oli tidak
-                        ada di sini — sudah punya section sendiri di Quick. */}
-                    {!partsOpen ? (
-                      <button
-                        type="button"
-                        onClick={() => setPartsOpen(true)}
-                        className={`flex w-full items-center justify-center gap-1.5 rounded-xl bg-(--color-surface) px-4 py-3 text-xs font-bold text-(--color-text-secondary) shadow-sm transition-all duration-200 hover:text-(--color-primary) hover:shadow-md ${btnPress}`}
-                      >
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          className="h-4 w-4"
-                          aria-hidden
-                        >
-                          <path d="M12 5v14M5 12h14" />
-                        </svg>
-                        Tambah part &amp; biaya
-                      </button>
-                    ) : (
-                      <section className="flex flex-col gap-4 rounded-xl bg-(--color-surface) p-4 shadow-sm">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-[10px] font-bold uppercase tracking-wide text-(--color-text-muted)">
-                            Part &amp; biaya
-                          </span>
+                  <div>
+                    <span className="text-[10px] font-bold text-(--color-text-muted)">Service type</span>
+                    <div role="radiogroup" aria-label="Jenis servis" className="mt-2 flex flex-wrap gap-2">
+                      {QUICK_CHIPS.map((c) => {
+                        const isActive = activeChip === c.id;
+                        return (
                           <button
+                            key={c.id}
                             type="button"
-                            onClick={() => {
-                              setPartsOpen(false);
-                              setPartLines([]);
-                              setRemovingKey(null);
-                            }}
-                            className={`rounded-full bg-(--color-primary-soft) px-2.5 py-1 text-[11px] font-semibold text-(--color-primary) transition-all duration-150 hover:brightness-95 ${btnPress}`}
+                            role="radio"
+                            aria-checked={isActive}
+                            onClick={() => applyChip(c.id)}
+                            className={`rounded-full px-3.5 py-2 text-xs font-bold ring-1 transition-all duration-150 ${btnPress} ${
+                              isActive
+                                ? "bg-(--color-primary-soft) text-(--color-primary) ring-(--color-primary)/45 shadow-sm"
+                                : "bg-(--color-surface) text-(--color-text-secondary) ring-(--color-border)/40 hover:ring-(--color-primary)/40"
+                            }`}
                           >
-                            Tutup
+                            {c.label}
                           </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Compact oil toggles */}
+                  <div className="flex flex-wrap gap-2">
+                    {(
+                      [
+                        { which: "engine" as const, flagKey: "changed_engine_oil" as const, label: "Oli mesin", visible: true },
+                        {
+                          which: "gearbox" as const,
+                          flagKey: "changed_gearbox_oil" as const,
+                          label: "Oli gardan",
+                          visible: hasGearboxInterval || form.changed_gearbox_oil,
+                        },
+                      ] as const
+                    )
+                      .filter((row) => row.visible)
+                      .map((row) => {
+                        const active = form[row.flagKey];
+                        return (
+                          <button
+                            key={row.which}
+                            type="button"
+                            onClick={() => toggleOilFlag(row.which, !active)}
+                            className={`rounded-full px-3 py-1.5 text-[11px] font-bold ring-1 transition-all ${btnPress} ${
+                              active
+                                ? "bg-(--color-primary-soft) text-(--color-primary) ring-(--color-primary)/40"
+                                : "bg-(--color-surface) text-(--color-text-secondary) ring-(--color-border)/40"
+                            }`}
+                          >
+                            {active ? "✓ " : "+ "}
+                            {row.label}
+                          </button>
+                        );
+                      })}
+                  </div>
+                  {(form.changed_engine_oil || form.changed_gearbox_oil) && (
+                    <div className="grid grid-cols-2 gap-2">
+                      {form.changed_engine_oil ? (
+                        <div className="relative">
+                          <label className="mb-0.5 block text-[10px] font-bold text-(--color-text-muted)">Harga oli mesin</label>
+                          <span className="pointer-events-none absolute left-2.5 top-[1.85rem] text-[10px] font-semibold text-(--color-text-muted)">Rp</span>
+                          <input
+                            ref={oilEnginePriceRef}
+                            type="text"
+                            inputMode="numeric"
+                            value={formatThousandsId(oilPrices.engine)}
+                            onChange={(e) =>
+                              setOilPrices((p) => ({ ...p, engine: digitsOnly(e.target.value, 12) }))
+                            }
+                            className={`${inputClass} py-2 pl-7 pr-2 text-right tabular-nums`}
+                            placeholder="0"
+                          />
                         </div>
+                      ) : null}
+                      {form.changed_gearbox_oil ? (
+                        <div className="relative">
+                          <label className="mb-0.5 block text-[10px] font-bold text-(--color-text-muted)">Harga oli gardan</label>
+                          <span className="pointer-events-none absolute left-2.5 top-[1.85rem] text-[10px] font-semibold text-(--color-text-muted)">Rp</span>
+                          <input
+                            ref={oilGearboxPriceRef}
+                            type="text"
+                            inputMode="numeric"
+                            value={formatThousandsId(oilPrices.gearbox)}
+                            onChange={(e) =>
+                              setOilPrices((p) => ({ ...p, gearbox: digitsOnly(e.target.value, 12) }))
+                            }
+                            className={`${inputClass} py-2 pl-7 pr-2 text-right tabular-nums`}
+                            placeholder="0"
+                          />
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
+                </section>
 
-                        {/* Quick-add chips — tap chip langsung tambah ke list +
-                            auto-focus price input. Disabled ketika slug-nya
-                            sudah ada di list (anti-duplikat). */}
-                        {(() => {
-                          const chips = partKindsForChips(detail?.motorcycle_category?.slug);
-                          if (chips.length === 0) return null;
-                          const usedSlugs = new Set(
-                            partLines.map((r) => r.kind_slug).filter((s): s is string => !!s),
-                          );
-                          return (
-                            <div className="flex flex-wrap gap-1.5">
-                              {chips.map((kind) => {
-                                const used = usedSlugs.has(kind.slug);
-                                return (
-                                  <button
-                                    key={kind.slug}
-                                    type="button"
-                                    disabled={used}
-                                    onClick={() => addCommonPart(kind)}
-                                    aria-pressed={used}
-                                    className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[11px] font-bold transition-all duration-150 ${btnPress} ${used
-                                        ? "cursor-not-allowed bg-(--color-primary-soft) text-(--color-primary)"
-                                        : "bg-(--color-bg) text-(--color-text-secondary) ring-1 ring-(--color-border)/40 hover:bg-(--color-primary-soft) hover:text-(--color-primary) hover:ring-(--color-primary)/40"
-                                      }`}
-                                  >
-                                    <span aria-hidden className="text-[12px] leading-none">
-                                      {used ? "✓" : "+"}
-                                    </span>
-                                    {kind.chip_label}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          );
-                        })()}
+                {/* Service items — compact cards */}
+                <section className="space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)">
+                      Service items
+                    </h3>
+                    <span className="text-[11px] font-semibold tabular-nums text-(--color-text-secondary)">
+                      {normalizePartLines(partLines).length} items
+                    </span>
+                  </div>
 
-                        {/* List parts atau empty state */}
-                        {partLines.length === 0 ? (
-                          <p className="rounded-lg bg-(--color-bg)/60 px-3 py-4 text-center text-xs text-(--color-text-muted)">
-                            Pilih part di atas untuk menambahkan
-                          </p>
-                        ) : (
-                          <ul className="flex flex-col gap-2">
-                            {partLines.map((line) => {
-                              const isRemoving = removingKey === line.key;
-                              return (
-                                <li
-                                  key={line.key}
-                                  className={`grid grid-cols-[minmax(0,1fr)_7.5rem_2rem] items-center gap-2 overflow-hidden transition-all duration-200 ease-out ${isRemoving
-                                      ? "max-h-0 -translate-x-2 opacity-0"
-                                      : "max-h-20 translate-x-0 opacity-100"
-                                    }`}
+                  <div className="relative">
+                    <label className="sr-only" htmlFor="part-search">Search spare part</label>
+                    <input
+                      id="part-search"
+                      type="search"
+                      value={partSearch}
+                      onChange={(e) => setPartSearch(e.target.value)}
+                      placeholder="Search spare part…"
+                      className={`${inputClass} py-2.5`}
+                    />
+                    {partSearch.trim().length > 0 ? (
+                      <ul className="mt-1.5 max-h-40 overflow-y-auto rounded-xl bg-(--color-bg) p-1 shadow-md ring-1 ring-(--color-border)/50">
+                        {partKindsForChips(detail?.motorcycle_category?.slug)
+                          .filter((k) =>
+                            k.chip_label.toLowerCase().includes(partSearch.trim().toLowerCase()) ||
+                            k.display_label.toLowerCase().includes(partSearch.trim().toLowerCase()),
+                          )
+                          .slice(0, 8)
+                          .map((kind) => {
+                            const used = partLines.some((r) => r.kind_slug === kind.slug);
+                            return (
+                              <li key={kind.slug}>
+                                <button
+                                  type="button"
+                                  disabled={used}
+                                  onClick={() => {
+                                    addCommonPart(kind);
+                                    setPartSearch("");
+                                    setExpandedPartKey(null);
+                                  }}
+                                  className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold transition-colors ${
+                                    used
+                                      ? "cursor-not-allowed text-(--color-text-muted)"
+                                      : "text-(--color-text) hover:bg-(--color-primary-soft) hover:text-(--color-primary)"
+                                  }`}
                                 >
-                                  <label className="sr-only" htmlFor={`part-name-${line.key}`}>
-                                    Nama part
-                                  </label>
-                                  <input
-                                    id={`part-name-${line.key}`}
-                                    type="text"
-                                    value={line.name}
-                                    onChange={(e) =>
-                                      setPartLines((rows) =>
-                                        rows.map((r) =>
-                                          r.key === line.key ? { ...r, name: e.target.value } : r,
-                                        ),
-                                      )
-                                    }
-                                    placeholder="Nama part"
-                                    className={`${inputClass} min-w-0 px-3 py-2`}
-                                  />
-                                  <div className="relative">
-                                    <label className="sr-only" htmlFor={`part-price-${line.key}`}>
-                                      Harga
-                                    </label>
-                                    <span
-                                      className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-semibold text-(--color-text-muted)"
-                                      aria-hidden
-                                    >
-                                      Rp
-                                    </span>
-                                    <input
-                                      id={`part-price-${line.key}`}
-                                      type="text"
-                                      inputMode="numeric"
-                                      autoComplete="off"
-                                      value={formatThousandsId(line.price)}
-                                      onChange={(e) =>
-                                        setPartLines((rows) =>
-                                          rows.map((r) =>
-                                            r.key === line.key
-                                              ? { ...r, price: digitsOnly(e.target.value, 12) }
-                                              : r,
-                                          ),
-                                        )
-                                      }
-                                      placeholder="Masukkan harga"
-                                      className={`${inputClass} py-2 pl-8 pr-2 text-right tabular-nums`}
-                                    />
-                                  </div>
+                                  <span aria-hidden>{kind.icon}</span>
+                                  {kind.chip_label}
+                                  {used ? <span className="ml-auto text-[10px]">added</span> : null}
+                                </button>
+                              </li>
+                            );
+                          })}
+                        {partKindsForChips(detail?.motorcycle_category?.slug).filter((k) =>
+                          k.chip_label.toLowerCase().includes(partSearch.trim().toLowerCase()) ||
+                          k.display_label.toLowerCase().includes(partSearch.trim().toLowerCase()),
+                        ).length === 0 ? (
+                          <li className="px-3 py-2 text-xs text-(--color-text-muted)">No matching parts</li>
+                        ) : null}
+                      </ul>
+                    ) : null}
+                  </div>
+
+                  {partLines.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-(--color-border) bg-(--color-surface)/50 px-4 py-6 text-center">
+                      <p className="text-sm font-bold text-(--color-text)">No service items yet</p>
+                      <p className="mt-1 text-xs text-(--color-text-secondary)">
+                        Upload a receipt or add an item manually.
+                      </p>
+                    </div>
+                  ) : (
+                    <ul className="flex flex-col gap-2">
+                      {partLines.map((line) => {
+                        const isRemoving = removingKey === line.key;
+                        const expanded = expandedPartKey === line.key;
+                        const lineTotal = derivedLineTotal(line.qty, line.unit_price, line.price);
+                        const totalNum = parseInt(lineTotal, 10) || 0;
+                        return (
+                          <li
+                            key={line.key}
+                            className={`overflow-hidden rounded-xl bg-(--color-surface) ring-1 ring-(--color-border)/40 transition-all duration-200 ${
+                              isRemoving ? "max-h-0 opacity-0 ring-0" : "opacity-100"
+                            }`}
+                          >
+                            {!expanded ? (
+                              <div className="flex items-center gap-2 px-3 py-2.5">
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedPartKey(line.key)}
+                                  className="min-w-0 flex-1 text-left"
+                                >
+                                  <p className="truncate text-sm font-semibold text-(--color-text)">
+                                    {line.name.trim() || "Untitled item"}
+                                  </p>
+                                  <p className="mt-0.5 text-[11px] tabular-nums text-(--color-text-secondary)">
+                                    Qty {line.qty || "1"}
+                                    {totalNum > 0 ? ` · ${formatIdr(totalNum)}` : ""}
+                                  </p>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => removePart(line.key)}
+                                  disabled={isRemoving}
+                                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-(--color-text-muted) hover:text-red-500 ${btnPress}`}
+                                  aria-label="Delete item"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
+                                    <path d="M3 6h18M8 6V4h8v2m-9 4v10m10-10v10M10 11v6M14 11v6" strokeLinecap="round" />
+                                  </svg>
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="space-y-2 p-3">
+                                <div className="flex items-center justify-between gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setExpandedPartKey(null)}
+                                    className="text-[11px] font-bold text-(--color-primary)"
+                                  >
+                                    Done
+                                  </button>
                                   <button
                                     type="button"
                                     onClick={() => removePart(line.key)}
-                                    disabled={isRemoving}
-                                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-gray-400 transition-all duration-150 hover:text-red-500 dark:text-(--color-text-muted) dark:hover:text-red-400 ${btnPress}`}
-                                    aria-label="Hapus baris"
+                                    className="text-[11px] font-semibold text-red-500"
                                   >
-                                    <svg
-                                      xmlns="http://www.w3.org/2000/svg"
-                                      viewBox="0 0 24 24"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      strokeWidth="2"
-                                      className="h-4 w-4"
-                                    >
-                                      <path
-                                        d="M3 6h18M8 6V4h8v2m-9 4v10m10-10v10M10 11v6M14 11v6"
-                                        strokeLinecap="round"
-                                      />
-                                    </svg>
+                                    Delete
                                   </button>
-                                </li>
-                              );
-                            })}
-                          </ul>
-                        )}
+                                </div>
+                                <input
+                                  type="text"
+                                  value={line.name}
+                                  onChange={(e) =>
+                                    setPartLines((rows) =>
+                                      rows.map((r) =>
+                                        r.key === line.key ? { ...r, name: e.target.value } : r,
+                                      ),
+                                    )
+                                  }
+                                  placeholder="Description"
+                                  className={`${inputClass} px-3 py-2`}
+                                  autoFocus
+                                />
+                                <div className="grid grid-cols-[4.5rem_minmax(0,1fr)_minmax(0,1fr)] gap-2">
+                                  <div>
+                                    <label className="mb-0.5 block text-[10px] font-bold text-(--color-text-muted)">Qty</label>
+                                    <input
+                                      type="text"
+                                      inputMode="numeric"
+                                      value={line.qty}
+                                      onChange={(e) => {
+                                        const qty = digitsOnly(e.target.value, 6) || "1";
+                                        setPartLines((rows) =>
+                                          rows.map((r) =>
+                                            r.key === line.key
+                                              ? {
+                                                  ...r,
+                                                  qty,
+                                                  price: derivedLineTotal(qty, r.unit_price, r.price),
+                                                }
+                                              : r,
+                                          ),
+                                        );
+                                      }}
+                                      className={`${inputClass} px-2 py-2 text-center tabular-nums`}
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="mb-0.5 block text-[10px] font-bold text-(--color-text-muted)">Unit price</label>
+                                    <div className="relative">
+                                      <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-(--color-text-muted)">Rp</span>
+                                      <input
+                                        type="text"
+                                        inputMode="numeric"
+                                        value={formatThousandsId(line.unit_price)}
+                                        onChange={(e) => {
+                                          const unit_price = digitsOnly(e.target.value, 12);
+                                          setPartLines((rows) =>
+                                            rows.map((r) =>
+                                              r.key === line.key
+                                                ? {
+                                                    ...r,
+                                                    unit_price,
+                                                    price: derivedLineTotal(r.qty, unit_price, r.price),
+                                                  }
+                                                : r,
+                                            ),
+                                          );
+                                        }}
+                                        className={`${inputClass} py-2 pl-7 pr-2 text-right tabular-nums`}
+                                        placeholder="0"
+                                      />
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <p className="mb-0.5 text-[10px] font-bold text-(--color-text-muted)">Total</p>
+                                    <p className="rounded-xl bg-(--color-surface-alt) px-2 py-2 text-right text-sm font-bold tabular-nums text-(--color-text-secondary) ring-1 ring-(--color-border)/40">
+                                      {totalNum > 0 ? formatIdr(totalNum) : "—"}
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
 
-                        {/* "+ Tambah part lain" — secondary, kecil, tidak menonjol */}
-                        <button
-                          type="button"
-                          onClick={addBlankPart}
-                          className={`self-start text-xs font-semibold text-(--color-text-secondary) transition-colors duration-150 hover:text-(--color-primary) ${btnPress}`}
-                        >
-                          + Tambah part lain
-                        </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const fresh = newPartLine();
+                      setPartLines((rows) => [...rows, fresh]);
+                      setExpandedPartKey(fresh.key);
+                    }}
+                    className={`flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-(--color-border) bg-(--color-surface)/40 px-4 py-3 text-xs font-bold text-(--color-text-secondary) hover:border-(--color-primary)/40 hover:text-(--color-primary) ${btnPress}`}
+                  >
+                    + Add Manual Item
+                  </button>
 
-                        {/* Total — bold, lebih besar, highlighted */}
-                        {normalizePartLines(partLines).length > 0 ? (
-                          <div className="flex items-center justify-between gap-2 rounded-xl bg-(--color-primary-soft)/60 px-4 py-3">
-                            <span className="text-xs font-semibold uppercase tracking-wide text-(--color-primary)">
-                              Total
-                            </span>
-                            <span className="text-base font-extrabold tabular-nums text-(--color-primary)">
-                              {formatIdr(sumParts(normalizePartLines(partLines)))}
-                            </span>
-                          </div>
-                        ) : null}
-                      </section>
-                    )}
-                  </section>
-                )}
+                  <div>
+                    <label className="text-[10px] font-bold text-(--color-text-muted)">Notes</label>
+                    <textarea
+                      value={form.description}
+                      onChange={(e) => setForm({ ...form, description: e.target.value })}
+                      rows={2}
+                      className={`${inputClass} mt-1.5 resize-none`}
+                      placeholder="Optional notes…"
+                    />
+                  </div>
+                </section>
               </div>
 
-              {/* Sticky save — full-width, primary, dengan loading + disable. */}
-              <div className="shrink-0 bg-(--color-bg) p-4 pb-[max(1rem,calc(env(safe-area-inset-bottom,0px)+1rem))] shadow-[0_-4px_12px_-8px_rgba(0,0,0,0.12)]">
+              <div className="shrink-0 border-t border-(--color-border)/50 bg-(--color-bg) px-4 pt-3 pb-[max(1rem,calc(env(safe-area-inset-bottom,0px)+1rem))]">
+                <div className="mb-3 flex items-end justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-(--color-text-muted)">
+                      Summary
+                    </p>
+                    <p className="mt-0.5 text-xs font-semibold text-(--color-text-secondary)">
+                      {normalizePartLines(partLines).length} items detected
+                    </p>
+                  </div>
+                  <p className="text-base font-extrabold tabular-nums text-(--color-primary)">
+                    {formatIdr(
+                      sumParts(normalizePartLines(partLines)) +
+                        (form.changed_engine_oil
+                          ? parseInt(digitsOnly(oilPrices.engine, 12), 10) || 0
+                          : 0) +
+                        (form.changed_gearbox_oil
+                          ? parseInt(digitsOnly(oilPrices.gearbox, 12), 10) || 0
+                          : 0),
+                    )}
+                  </p>
+                </div>
                 <button
                   type="submit"
-                  disabled={saveDisabled}
+                  disabled={saveDisabled || ocrPhase === "processing"}
                   className={`w-full rounded-xl bg-(--color-primary) py-3.5 text-sm font-bold text-white shadow-md shadow-(--color-primary)/25 transition-all duration-200 hover:brightness-110 hover:shadow-lg ${btnPress} ${btnDisabled}`}
                 >
-                  {saving ? "Menyimpan…" : editingId ? "Simpan perubahan" : "Simpan Servis"}
+                  {saving ? "Saving…" : editingId ? "Save changes" : "Save Service"}
                 </button>
               </div>
             </form>
@@ -1779,16 +1951,72 @@ export default function ServiceHistoryPage() {
                   <dd className="mt-1 whitespace-pre-line break-words leading-relaxed text-(--color-text)">{selectedRecord.description}</dd>
                 </div>
               ) : null}
+              {selectedRecord.receipt_path ? (
+                <div>
+                  <dt className="text-[10px] font-bold uppercase tracking-wide text-(--color-text-muted)">
+                    Nota penjualan
+                  </dt>
+                  <dd className="mt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void (async () => {
+                          try {
+                            const url = await createServiceReceiptSignedUrl(
+                              selectedRecord.receipt_path!,
+                            );
+                            window.open(url, "_blank", "noopener,noreferrer");
+                          } catch (err) {
+                            toast.error(
+                              err instanceof Error ? err.message : "Gagal membuka nota",
+                            );
+                          }
+                        })();
+                      }}
+                      className={`inline-flex items-center gap-2 rounded-xl bg-(--color-primary-soft) px-3 py-2 text-xs font-bold text-(--color-primary) hover:brightness-95 ${btnPress}`}
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        className="h-4 w-4"
+                        aria-hidden
+                      >
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                        <path d="M14 2v6h6" />
+                      </svg>
+                      Lihat / unduh nota
+                    </button>
+                  </dd>
+                </div>
+              ) : null}
               {selectedRecord.parts.length > 0 ? (
                 <div>
                   <dt className="text-[10px] font-bold uppercase tracking-wide text-(--color-text-muted)">Part &amp; biaya</dt>
                   <dd className="mt-2 space-y-1.5">
-                    {selectedRecord.parts.map((p, i) => (
-                      <div key={`${p.name}-${i}`} className="flex justify-between gap-3 text-(--color-text)">
-                        <span className="min-w-0 truncate">{p.name}</span>
-                        <span className="shrink-0 tabular-nums font-semibold">{formatIdr(p.price)}</span>
-                      </div>
-                    ))}
+                    {selectedRecord.parts.map((p, i) => {
+                      const qty = p.qty != null && p.qty > 0 ? p.qty : null;
+                      const unit =
+                        p.unit_price != null && p.unit_price > 0
+                          ? p.unit_price
+                          : null;
+                      const showBreakdown = qty != null && unit != null && (qty !== 1 || unit !== p.price);
+                      return (
+                        <div key={`${p.name}-${i}`} className="flex justify-between gap-3 text-(--color-text)">
+                          <div className="min-w-0">
+                            <p className="truncate font-medium">{p.name}</p>
+                            {showBreakdown ? (
+                              <p className="text-[11px] text-(--color-text-muted) tabular-nums">
+                                {qty} × {formatIdr(unit)}
+                              </p>
+                            ) : null}
+                          </div>
+                          <span className="shrink-0 tabular-nums font-semibold">{formatIdr(p.price)}</span>
+                        </div>
+                      );
+                    })}
                     <p className="border-t border-(--color-border)/60 pt-2 text-base font-bold tabular-nums text-(--color-primary)">
                       Total {formatIdr(sumParts(selectedRecord.parts))}
                     </p>

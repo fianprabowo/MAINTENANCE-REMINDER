@@ -18,8 +18,9 @@ Aplikasi web pelacak servis kendaraan berbasis **Next.js (App Router)** + **Supa
 
 1. Buat project baru di Supabase.
 2. Buka **SQL Editor** → jalankan seluruh isi file `supabase/migrations/001_initial_schema.sql` (satu kali). Untuk teardown total, jalankan `supabase/rollback/001_drop_all.sql`.
-3. **Authentication** → **Providers** → **Email**: untuk pengembangan lokal, Anda bisa menonaktifkan **Confirm email** agar user langsung aktif setelah signup (opsional).
-4. **Project Settings** → **API**: salin **Project URL**, **anon public** key, dan **service_role** key.
+3. Jalankan juga `supabase/migrations/002_service_receipts_storage.sql` (bucket private `service-receipts` + kolom `service_records.receipt_path`). Rollback: `supabase/rollback/002_service_receipts_storage.sql`.
+4. **Authentication** → **Providers** → **Email**: untuk pengembangan lokal, Anda bisa menonaktifkan **Confirm email** agar user langsung aktif setelah signup (opsional).
+5. **Project Settings** → **API**: salin **Project URL**, **anon public** key, dan **service_role** key.
 
 ## Cara Menjalankan
 

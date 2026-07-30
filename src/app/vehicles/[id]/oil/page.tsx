@@ -255,13 +255,30 @@ export default function VehicleOilPage() {
               />
             ))}
 
-            {/* Secondary CTA — Riwayat Servis (no longer dominant). */}
+            {/* Secondary CTAs — kondisi part + riwayat. */}
             <Link
-              href={`/vehicles/${vehicleId}/service-history`}
+              href={`/vehicles/${vehicleId}/condition`}
               className="mt-6 flex items-center justify-between rounded-2xl bg-(--color-surface) px-5 py-4 text-sm font-semibold text-(--color-text) shadow-sm ring-1 ring-(--color-border)/60 transition-all duration-200 hover:shadow-md active:scale-[0.98]"
             >
+              <span className="flex flex-col gap-0.5">
+                <span>Cek kondisi part</span>
+                <span className="text-[11px] font-normal text-(--color-text-secondary)">
+                  Umur busi, filter, belt, dan komponen lain
+                </span>
+              </span>
+              <span className="text-(--color-text-muted)" aria-hidden>
+                →
+              </span>
+            </Link>
+
+            <Link
+              href={`/vehicles/${vehicleId}/service-history`}
+              className="mt-3 flex items-center justify-between rounded-2xl bg-(--color-surface) px-5 py-4 text-sm font-semibold text-(--color-text) shadow-sm ring-1 ring-(--color-border)/60 transition-all duration-200 hover:shadow-md active:scale-[0.98]"
+            >
               <span>Riwayat servis</span>
-              <span className="text-(--color-text-muted)">→</span>
+              <span className="text-(--color-text-muted)" aria-hidden>
+                →
+              </span>
             </Link>
 
             {/* Tertiary CTA — bengkel (text-only, lowest visual weight). */}

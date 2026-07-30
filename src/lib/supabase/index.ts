@@ -41,6 +41,14 @@ export {
 } from "./services/serviceRecords";
 
 export {
+  SERVICE_RECEIPTS_BUCKET,
+  uploadServiceReceipt,
+  removeServiceReceipt,
+  createServiceReceiptSignedUrl,
+  updateServiceRecordReceiptPath,
+} from "./services/serviceReceipts";
+
+export {
   resetRemindersAfterServiceRecord,
   restoreReminderFromReset,
   presetSlugsToResetForServiceRecord,

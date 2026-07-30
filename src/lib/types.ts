@@ -185,7 +185,12 @@ export interface ReminderResetSnapshot {
 /** Sparepart / biaya per baris (harga integer, Rupiah penuh). */
 export interface ServicePartLine {
   name: string;
+  /** Total baris (qty × unit_price). Dipakai `sumParts` / tampilan total. */
   price: number;
+  /** Jumlah item. Absen pada data lama → treat as 1. */
+  qty?: number;
+  /** Harga satuan. Absen pada data lama → treat as `price`. */
+  unit_price?: number;
   /**
    * Tag standar untuk part. Diisi otomatis saat user tap chip "Tambah cepat"
    * di modal servis (mis. `spark_plug`, `air_filter`, `v_belt`). Free-text
@@ -215,6 +220,11 @@ export interface ServiceRecord {
   serviced_at: string;
   created_at: string;
   parts: ServicePartLine[];
+  /**
+   * Path object di bucket `service-receipts` (bukan public URL).
+   * Null/undefined = tidak ada file nota tersimpan.
+   */
+  receipt_path?: string | null;
 }
 
 export interface VehicleDetail {

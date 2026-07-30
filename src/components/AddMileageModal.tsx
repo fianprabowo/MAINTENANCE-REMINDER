@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import OdometerScanButton from "@/components/OdometerScanButton";
 import { insertMileage } from "@/lib/supabase";
 import { toast } from "sonner";
@@ -28,7 +29,12 @@ export default function AddMileageModal({
   const [saving, setSaving] = useState(false);
   const [fieldError, setFieldError] = useState(false);
   const [shaking, setShaking] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const shakeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (open) {
@@ -43,6 +49,25 @@ export default function AddMileageModal({
       if (shakeTimer.current) clearTimeout(shakeTimer.current);
     };
   }, []);
+
+  /** Body scroll lock + Escape-to-close while the bottom sheet is open. */
+  useEffect(() => {
+    if (!open) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !saving) {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open, saving, onClose]);
 
   const triggerFieldError = () => {
     setFieldError(true);
@@ -84,27 +109,43 @@ export default function AddMileageModal({
     }
   };
 
-  if (!open) return null;
+  if (!open || !mounted) return null;
 
-  return (
+  /**
+   * Portal ke document.body — sheet di /vehicles di-render di dalam
+   * wrapper layout `overflow-x-clip`, yang membuat containing block /
+   * stacking context. Tanpa portal, `fixed` + z-50 kalah dari BottomNav
+   * (juga z-50, sibling di luar wrapper).
+   */
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex min-h-0 items-center justify-center bg-black/40 p-4"
-      role="presentation"
-      onClick={(e) => {
-        if (e.target === e.currentTarget && !saving) onClose();
-      }}
+      className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center"
+      role="dialog"
+      aria-modal="true"
+      aria-busy={saving}
+      aria-labelledby="add-mileage-title"
     >
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/40 transition-opacity duration-150 hover:bg-black/45"
+        aria-label="Tutup"
+        disabled={saving}
+        onClick={() => {
+          if (!saving) onClose();
+        }}
+      />
       <div
-        className="relative w-full max-w-md rounded-3xl bg-(--color-bg) p-6 pb-7 shadow-2xl"
-        role="dialog"
-        aria-modal="true"
-        aria-busy={saving}
-        aria-labelledby="add-mileage-title"
+        className="relative z-10 flex w-full max-w-md flex-col rounded-t-3xl bg-(--color-bg) shadow-2xl sm:mx-4 sm:rounded-3xl"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Drag handle — mobile bottom-sheet affordance */}
+        <div className="flex justify-center pt-3 sm:hidden" aria-hidden>
+          <div className="h-1 w-10 rounded-full bg-(--color-border)" />
+        </div>
+
         {saving && (
           <div
-            className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-3xl bg-(--color-bg)/92 backdrop-blur-[2px] dark:bg-black/55"
+            className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-t-3xl bg-(--color-bg)/92 backdrop-blur-[2px] sm:rounded-3xl dark:bg-black/55"
             aria-live="polite"
             aria-label="Menyimpan"
           >
@@ -118,17 +159,16 @@ export default function AddMileageModal({
             </p>
           </div>
         )}
+
         <form
           noValidate
           onSubmit={handleSubmit}
-          className={`space-y-4 ${saving ? "pointer-events-none" : ""}`}
+          className={`space-y-4 px-5 pt-3 pb-[max(1.25rem,calc(env(safe-area-inset-bottom,0px)+1rem))] sm:p-6 sm:pb-7 ${saving ? "pointer-events-none" : ""}`}
         >
           <div className="flex items-start justify-between gap-3">
             <h2 id="add-mileage-title" className="min-w-0 flex-1 text-lg font-bold leading-tight">
               {title}
             </h2>
-            {/* Close icon (X) — secondary action, sebelumnya tombol "Batal" di
-                bawah. Pindah ke pojok sebagai close affordance standar modal. */}
             <button
               type="button"
               onClick={onClose}
@@ -157,7 +197,6 @@ export default function AddMileageModal({
                 KM baru harus{" "}
                 <span className="font-semibold text-(--color-text)">lebih besar</span> dari{" "}
                 <span className="font-semibold text-(--color-text)">{minMileage.toLocaleString()} km</span>{" "}
-                (KM terakhir tercatat).
               </>
             ) : (
               <>Masukkan odometer saat ini (harus lebih besar dari 0).</>
@@ -182,14 +221,10 @@ export default function AddMileageModal({
                 ? "border-red-500 bg-red-50/50 ring-2 ring-red-500/30 focus:border-red-500 focus:ring-red-500/25 dark:border-red-500/80 dark:bg-red-950/20 dark:ring-red-500/35"
                 : "border-(--color-border) focus:border-(--color-primary) focus:ring-(--color-primary)/20"
               } ${shaking ? "input-err-shake" : ""}`}
-            placeholder="Odometer (km)"
+            placeholder="kilometer"
             autoFocus
           />
           <OdometerScanButton variant="full" disabled={saving} onDetected={setKmDigits} />
-          {/* Primary CTA — pola tombol Simpan standar app: --color-primary
-              solid + shadow-(--color-primary)/30 + active:scale-95.
-              Sebelumnya posisi ini dipakai untuk "Batal" — kini dijadikan
-              tombol simpan utama supaya thumb-reach friendly di mobile. */}
           <button
             type="submit"
             disabled={saving}
@@ -199,6 +234,7 @@ export default function AddMileageModal({
           </button>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

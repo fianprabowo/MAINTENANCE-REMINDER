@@ -45,8 +45,15 @@ body {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
-input, select, textarea {
-  background-color: var(--color-surface);
+/* Editable controls default to page bg (white / dark canvas).
+   Read-only / muted chips use --color-surface via explicit classes.
+   Keep this in @layer base so Tailwind bg-* utilities can override. */
+@layer base {
+  input,
+  select,
+  textarea {
+    background-color: var(--color-bg);
+  }
 }
 
 form.submitted input:invalid,
@@ -113,6 +120,29 @@ select option {
 
 .input-err-shake {
   animation: input-err-shake 0.42s ease-in-out;
+}
+
+/* Indeterminate bar for OCR / AI wait (single request, no real % progress). */
+@keyframes progress-indeterminate {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
+
+.progress-indeterminate {
+  width: 40%;
+  animation: progress-indeterminate 1.15s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-indeterminate {
+    width: 100%;
+    animation: none;
+    opacity: 0.55;
+  }
 }
 
 /* ---------------------------------------------------------------------------
