@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import {
@@ -392,6 +392,15 @@ export default function ServiceHistoryPage() {
   const [expandedPartKey, setExpandedPartKey] = useState<string | null>(null);
   const [partSearch, setPartSearch] = useState("");
   const [selectedRecord, setSelectedRecord] = useState<ServiceRecord | null>(null);
+  /** Slide-down dismiss untuk detail bottom sheet (mobile). */
+  const [detailDragY, setDetailDragY] = useState(0);
+  const [detailDragging, setDetailDragging] = useState(false);
+  const detailDragRef = useRef<{
+    startY: number;
+    lastY: number;
+    startT: number;
+    pointerId: number;
+  } | null>(null);
   /**
    * Record yang sedang di-konfirmasi untuk dihapus. `null` = tidak ada
    * dialog terbuka. Dipisah dari `selectedRecord` supaya transisi visual
@@ -723,6 +732,9 @@ export default function ServiceHistoryPage() {
    * (lihat `app/overview/page.tsx`).
    */
   const requestDeleteRecord = useCallback((r: ServiceRecord) => {
+    detailDragRef.current = null;
+    setDetailDragging(false);
+    setDetailDragY(0);
     setSelectedRecord(null);
     setPendingDeleteRecord(r);
   }, []);
@@ -871,13 +883,67 @@ export default function ServiceHistoryPage() {
   }, [addModalOpen, closeAddModal]);
 
   useEffect(() => {
-    if (!addModalOpen) return;
+    if (!addModalOpen && !selectedRecord) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = prev;
     };
-  }, [addModalOpen]);
+  }, [addModalOpen, selectedRecord]);
+
+  const closeDetailSheet = useCallback(() => {
+    detailDragRef.current = null;
+    setDetailDragging(false);
+    setDetailDragY(0);
+    setSelectedRecord(null);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedRecord) {
+      detailDragRef.current = null;
+      setDetailDragging(false);
+      setDetailDragY(0);
+    }
+  }, [selectedRecord]);
+
+  const onDetailDragPointerDown = useCallback((e: PointerEvent<HTMLElement>) => {
+    // Jangan mulai drag dari tombol (hapus).
+    if ((e.target as HTMLElement).closest("button")) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    detailDragRef.current = {
+      startY: e.clientY,
+      lastY: e.clientY,
+      startT: Date.now(),
+      pointerId: e.pointerId,
+    };
+    setDetailDragging(true);
+  }, []);
+
+  const onDetailDragPointerMove = useCallback((e: PointerEvent<HTMLElement>) => {
+    const d = detailDragRef.current;
+    if (!d || d.pointerId !== e.pointerId) return;
+    d.lastY = e.clientY;
+    setDetailDragY(Math.max(0, e.clientY - d.startY));
+  }, []);
+
+  const onDetailDragPointerUp = useCallback(
+    (e: PointerEvent<HTMLElement>) => {
+      const d = detailDragRef.current;
+      if (!d || d.pointerId !== e.pointerId) return;
+      const dy = Math.max(0, d.lastY - d.startY);
+      const elapsed = Math.max(1, Date.now() - d.startT);
+      const velocity = dy / elapsed; // px/ms
+      detailDragRef.current = null;
+      setDetailDragging(false);
+      // Threshold jarak atau flick cepat ke bawah.
+      if (dy > 110 || (dy > 48 && velocity > 0.55)) {
+        closeDetailSheet();
+        return;
+      }
+      setDetailDragY(0);
+    },
+    [closeDetailSheet],
+  );
 
   useEffect(() => {
     if (!addModalOpen) return;
@@ -1873,107 +1939,204 @@ export default function ServiceHistoryPage() {
 
       {selectedRecord ? (
         <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 pb-[max(1rem,calc(env(safe-area-inset-bottom,0px)+1rem))] sm:items-center"
+          className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center"
           role="dialog"
           aria-modal="true"
           aria-labelledby="service-detail-title"
         >
-          <button type="button" className="absolute inset-0 cursor-default" aria-label="Tutup" onClick={() => setSelectedRecord(null)} />
-          <div className="relative z-10 w-full max-w-md rounded-xl border border-(--color-border) bg-(--color-bg) p-6 shadow-xl">
-            <div className="flex items-start justify-between gap-3">
-              <h3 id="service-detail-title" className="text-lg font-extrabold text-(--color-text)">
-                Detail servis
-              </h3>
-              {/* Trash icon — soft red sesuai pola di vehicles/[id]/page.tsx
-                  (lihat tombol delete kendaraan). Confirm dialog di-handle
-                  via state `pendingDeleteRecord` supaya destructive action
-                  butuh klik dua kali (tap trash → konfirmasi). */}
-              <button
-                type="button"
-                onClick={() => requestDeleteRecord(selectedRecord)}
-                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-50 text-red-500 transition-colors duration-150 hover:bg-red-100 dark:bg-red-900/15 dark:text-red-400 dark:hover:bg-red-900/30 ${btnPress}`}
-                aria-label="Hapus riwayat servis"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="h-4.5 w-4.5"
-                  aria-hidden
-                >
-                  <path d="M3 6h18M8 6V4h8v2m-9 4v10m10-10v10M10 11v6M14 11v6" />
-                </svg>
-              </button>
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/40 transition-opacity duration-150"
+            style={{
+              opacity: Math.max(0.08, 0.4 * (1 - Math.min(1, detailDragY / 260))),
+            }}
+            aria-label="Tutup"
+            onClick={closeDetailSheet}
+          />
+          <div
+            className="relative z-10 flex max-h-[80dvh] w-full max-w-md flex-col overflow-hidden rounded-t-2xl border border-(--color-border) bg-(--color-bg) shadow-2xl sm:mx-4 sm:rounded-2xl"
+            style={{
+              transform: `translateY(${detailDragY}px)`,
+              transition: detailDragging ? "none" : "transform 200ms ease-out",
+            }}
+          >
+            {/* Handle + header: area drag untuk slide-down dismiss (mobile). */}
+            <div
+              className="shrink-0 touch-none border-b border-(--color-border)/60 pt-2 sm:pt-0"
+              onPointerDown={onDetailDragPointerDown}
+              onPointerMove={onDetailDragPointerMove}
+              onPointerUp={onDetailDragPointerUp}
+              onPointerCancel={onDetailDragPointerUp}
+            >
+              <div className="flex justify-center pb-1 sm:hidden" aria-hidden>
+                <div className="h-1 w-10 rounded-full bg-(--color-border)" />
+              </div>
+              <div className="flex items-start justify-between gap-3 px-5 py-3 sm:py-4">
+                <h3 id="service-detail-title" className="text-lg font-extrabold text-(--color-text)">
+                  Detail servis
+                </h3>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const r = selectedRecord;
+                      closeDetailSheet();
+                      openEditModal(r);
+                    }}
+                    className={`flex h-9 w-9 items-center justify-center rounded-lg bg-(--color-primary-soft) text-(--color-primary) transition-colors duration-150 hover:brightness-95 ${btnPress}`}
+                    aria-label="Ubah riwayat servis"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="h-4.5 w-4.5"
+                      aria-hidden
+                    >
+                      <path d="M12 20h9" />
+                      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                    </svg>
+                  </button>
+                  {/* Trash icon — soft red. Confirm via `pendingDeleteRecord`. */}
+                  <button
+                    type="button"
+                    onClick={() => requestDeleteRecord(selectedRecord)}
+                    className={`flex h-9 w-9 items-center justify-center rounded-lg bg-red-50 text-red-500 transition-colors duration-150 hover:bg-red-100 dark:bg-red-900/15 dark:text-red-400 dark:hover:bg-red-900/30 ${btnPress}`}
+                    aria-label="Hapus riwayat servis"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="h-4.5 w-4.5"
+                      aria-hidden
+                    >
+                      <path d="M3 6h18M8 6V4h8v2m-9 4v10m10-10v10M10 11v6M14 11v6" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
             </div>
-            <dl className="mt-4 space-y-3 text-sm">
-              <div>
-                <dt className="text-[10px] font-bold uppercase tracking-wide text-(--color-text-muted)">Tanggal</dt>
-                <dd className="mt-1 font-semibold text-(--color-text)">{formatServiceDate(selectedRecord.serviced_at)}</dd>
-              </div>
-              <div>
-                <dt className="text-[10px] font-bold uppercase tracking-wide text-(--color-text-muted)">KM</dt>
-                <dd className="mt-1 font-semibold tabular-nums text-(--color-text)">{formatKm(selectedRecord.mileage_at_service)}</dd>
-              </div>
-              <div>
-                <dt className="text-[10px] font-bold uppercase tracking-wide text-(--color-text-muted)">Jenis</dt>
-                <dd className="mt-1 font-semibold text-(--color-text)">{recordTitle(selectedRecord)}</dd>
-              </div>
-              {oilChangeLabel(selectedRecord) ? (
-                <div>
-                  <dt className="text-[10px] font-bold uppercase tracking-wide text-(--color-text-muted)">Ganti oli</dt>
-                  <dd className="mt-1 inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-xs font-bold text-amber-700 dark:text-amber-300">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden>
-                      <path d="M12 2v6M5 8a7 7 0 0 0 14 0M12 8v14" />
-                    </svg>
-                    {oilChangeLabel(selectedRecord)}
-                  </dd>
-                </div>
-              ) : null}
-              {selectedRecord.location?.trim() ? (
-                <div>
-                  <dt className="text-[10px] font-bold uppercase tracking-wide text-(--color-text-muted)">Lokasi</dt>
-                  <dd className="mt-1 inline-flex items-start gap-1.5 break-words font-semibold text-(--color-text)">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 h-4 w-4 shrink-0 text-(--color-text-muted)" aria-hidden>
-                      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 1 1 18 0z" />
-                      <circle cx="12" cy="10" r="3" />
-                    </svg>
-                    <span>{selectedRecord.location}</span>
-                  </dd>
-                </div>
-              ) : null}
-              {selectedRecord.description?.trim() ? (
-                <div>
-                  <dt className="text-[10px] font-bold uppercase tracking-wide text-(--color-text-muted)">Catatan</dt>
-                  <dd className="mt-1 whitespace-pre-line break-words leading-relaxed text-(--color-text)">{selectedRecord.description}</dd>
-                </div>
-              ) : null}
-              {selectedRecord.receipt_path ? (
-                <div>
-                  <dt className="text-[10px] font-bold uppercase tracking-wide text-(--color-text-muted)">
-                    Nota penjualan
-                  </dt>
-                  <dd className="mt-2">
+
+            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-5 py-4">
+              {/* Meta servis — grid 2 kolom; field panjang full-width. */}
+              <section className="overflow-hidden rounded-2xl bg-(--color-surface) ring-1 ring-(--color-border)/45">
+                <dl className="grid grid-cols-2 gap-px bg-(--color-border)/40">
+                  <div className="bg-(--color-surface) px-3.5 py-3">
+                    <dt className="text-[10px] font-bold uppercase tracking-[0.12em] text-(--color-text-muted)">
+                      Tanggal
+                    </dt>
+                    <dd className="mt-1 text-[13px] font-semibold tracking-tight text-(--color-text)">
+                      {formatServiceDate(selectedRecord.serviced_at)}
+                    </dd>
+                  </div>
+                  <div className="bg-(--color-surface) px-3.5 py-3">
+                    <dt className="text-[10px] font-bold uppercase tracking-[0.12em] text-(--color-text-muted)">
+                      KM
+                    </dt>
+                    <dd className="mt-1 font-mono text-[13px] font-semibold tracking-tight text-(--color-text) tabular-nums">
+                      {formatKm(selectedRecord.mileage_at_service)}
+                    </dd>
+                  </div>
+                  <div
+                    className={`bg-(--color-surface) px-3.5 py-3 ${
+                      oilChangeLabel(selectedRecord) ? "" : "col-span-2"
+                    }`}
+                  >
+                    <dt className="text-[10px] font-bold uppercase tracking-[0.12em] text-(--color-text-muted)">
+                      Jenis
+                    </dt>
+                    <dd className="mt-1 text-[13px] font-semibold tracking-tight text-(--color-text)">
+                      {recordTitle(selectedRecord)}
+                    </dd>
+                  </div>
+                  {oilChangeLabel(selectedRecord) ? (
+                    <div className="bg-(--color-surface) px-3.5 py-3">
+                      <dt className="text-[10px] font-bold uppercase tracking-[0.12em] text-(--color-text-muted)">
+                        Ganti oli
+                      </dt>
+                      <dd className="mt-1.5">
+                        <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-bold text-amber-700 dark:text-amber-300">
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 shrink-0" aria-hidden>
+                            <path d="M12 2v6M5 8a7 7 0 0 0 14 0M12 8v14" />
+                          </svg>
+                          <span className="truncate">{oilChangeLabel(selectedRecord)}</span>
+                        </span>
+                      </dd>
+                    </div>
+                  ) : null}
+                </dl>
+
+                {selectedRecord.location?.trim() ? (
+                  <div className="border-t border-(--color-border)/40 px-3.5 py-3">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-(--color-text-muted)">
+                      Lokasi
+                    </p>
+                    <p className="mt-1 inline-flex items-start gap-1.5 break-words text-[13px] font-semibold tracking-tight text-(--color-text)">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 h-4 w-4 shrink-0 text-(--color-text-muted)" aria-hidden>
+                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 1 1 18 0z" />
+                        <circle cx="12" cy="10" r="3" />
+                      </svg>
+                      <span>{selectedRecord.location}</span>
+                    </p>
+                  </div>
+                ) : null}
+
+                {selectedRecord.description?.trim() ? (
+                  <div className="border-t border-(--color-border)/40 px-3.5 py-3">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-(--color-text-muted)">
+                      Catatan
+                    </p>
+                    <p className="mt-1 whitespace-pre-line break-words text-[13px] leading-relaxed tracking-tight text-(--color-text-secondary)">
+                      {selectedRecord.description}
+                    </p>
+                  </div>
+                ) : null}
+
+                {selectedRecord.receipt_path ? (
+                  <div className="flex items-center justify-between gap-3 border-t border-(--color-border)/40 px-3.5 py-3">
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-(--color-text-muted)">
+                        Nota penjualan
+                      </p>
+                      <p className="mt-0.5 truncate text-[12px] font-medium text-(--color-text-secondary)">
+                        Bukti servis tersimpan
+                      </p>
+                    </div>
                     <button
                       type="button"
                       onClick={() => {
+                        // Mobile (iOS Safari/Chrome) memblokir window.open setelah await.
+                        // Buka tab kosong dulu secara sync di dalam gesture user.
+                        const preview = window.open("about:blank", "_blank");
                         void (async () => {
                           try {
                             const url = await createServiceReceiptSignedUrl(
                               selectedRecord.receipt_path!,
                             );
-                            window.open(url, "_blank", "noopener,noreferrer");
+                            if (preview) {
+                              preview.opener = null;
+                              preview.location.href = url;
+                            } else {
+                              window.location.assign(url);
+                            }
                           } catch (err) {
+                            preview?.close();
                             toast.error(
                               err instanceof Error ? err.message : "Gagal membuka nota",
                             );
                           }
                         })();
                       }}
-                      className={`inline-flex items-center gap-2 rounded-xl bg-(--color-primary-soft) px-3 py-2 text-xs font-bold text-(--color-primary) hover:brightness-95 ${btnPress}`}
+                      className={`inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-(--color-primary-soft) px-3 py-2 text-xs font-bold text-(--color-primary) hover:brightness-95 ${btnPress}`}
                     >
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
@@ -1987,59 +2150,70 @@ export default function ServiceHistoryPage() {
                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                         <path d="M14 2v6h6" />
                       </svg>
-                      Lihat / unduh nota
+                      Invoice
                     </button>
-                  </dd>
-                </div>
-              ) : null}
+                  </div>
+                ) : null}
+              </section>
+
+              {/* Part & biaya — section terpisah dari meta. */}
               {selectedRecord.parts.length > 0 ? (
-                <div>
-                  <dt className="text-[10px] font-bold uppercase tracking-wide text-(--color-text-muted)">Part &amp; biaya</dt>
-                  <dd className="mt-2 space-y-1.5">
-                    {selectedRecord.parts.map((p, i) => {
-                      const qty = p.qty != null && p.qty > 0 ? p.qty : null;
-                      const unit =
-                        p.unit_price != null && p.unit_price > 0
-                          ? p.unit_price
-                          : null;
-                      const showBreakdown = qty != null && unit != null && (qty !== 1 || unit !== p.price);
-                      return (
-                        <div key={`${p.name}-${i}`} className="flex justify-between gap-3 text-(--color-text)">
-                          <div className="min-w-0">
-                            <p className="truncate font-medium">{p.name}</p>
-                            {showBreakdown ? (
-                              <p className="text-[11px] text-(--color-text-muted) tabular-nums">
-                                {qty} × {formatIdr(unit)}
+                <section>
+                  <h4 className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-(--color-text-muted)">
+                    Part &amp; biaya
+                  </h4>
+                  <div className="overflow-hidden rounded-2xl bg-(--color-surface) ring-1 ring-(--color-border)/45">
+                    <ul className="divide-y divide-(--color-border)/45">
+                      {selectedRecord.parts.map((p, i) => {
+                        const qty = p.qty != null && p.qty > 0 ? p.qty : null;
+                        const unit =
+                          p.unit_price != null && p.unit_price > 0
+                            ? p.unit_price
+                            : null;
+                        const showBreakdown =
+                          qty != null && unit != null && (qty !== 1 || unit !== p.price);
+                        return (
+                          <li
+                            key={`${p.name}-${i}`}
+                            className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-4 px-3.5 py-3"
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate text-[13px] font-semibold tracking-tight text-(--color-text)">
+                                {p.name}
                               </p>
-                            ) : null}
-                          </div>
-                          <span className="shrink-0 tabular-nums font-semibold">{formatIdr(p.price)}</span>
-                        </div>
-                      );
-                    })}
-                    <p className="border-t border-(--color-border)/60 pt-2 text-base font-bold tabular-nums text-(--color-primary)">
-                      Total {formatIdr(sumParts(selectedRecord.parts))}
-                    </p>
-                  </dd>
-                </div>
+                              {showBreakdown ? (
+                                <p className="mt-0.5 font-mono text-[11px] font-medium tracking-tight text-(--color-text-secondary) tabular-nums">
+                                  {qty}
+                                  <span className="mx-1 text-(--color-text-muted)">×</span>
+                                  {formatIdr(unit)}
+                                </p>
+                              ) : null}
+                            </div>
+                            <p className="shrink-0 text-right font-mono text-[13px] font-semibold tracking-tight text-(--color-text) tabular-nums">
+                              {formatIdr(p.price)}
+                            </p>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                    <div className="flex items-baseline justify-between gap-4 border-t border-(--color-border)/55 bg-(--color-surface-alt)/80 px-3.5 py-3">
+                      <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-(--color-text-secondary)">
+                        Total
+                      </span>
+                      <span className="text-right font-mono text-[15px] font-bold tracking-tight text-(--color-primary) tabular-nums">
+                        {formatIdr(sumParts(selectedRecord.parts))}
+                      </span>
+                    </div>
+                  </div>
+                </section>
               ) : null}
-            </dl>
-            <div className="mt-6 flex flex-col gap-2 sm:flex-row-reverse">
+            </div>
+
+            <div className="shrink-0 border-t border-(--color-border)/60 px-5 py-4 pb-[max(1rem,calc(env(safe-area-inset-bottom,0px)+1rem))] sm:pb-4">
               <button
                 type="button"
-                onClick={() => {
-                  const r = selectedRecord;
-                  setSelectedRecord(null);
-                  openEditModal(r);
-                }}
-                className={`w-full rounded-xl bg-(--color-primary) py-3 text-sm font-bold text-white shadow-md shadow-(--color-primary)/20 hover:brightness-110 sm:flex-1 ${btnPress}`}
-              >
-                Ubah
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedRecord(null)}
-                className={`w-full rounded-xl border border-(--color-border) bg-(--color-surface-alt) py-3 text-sm font-bold text-(--color-text) hover:bg-(--color-surface) sm:flex-1 ${btnPress}`}
+                onClick={closeDetailSheet}
+                className={`w-full rounded-xl border border-(--color-border) bg-(--color-surface-alt) py-3 text-sm font-bold text-(--color-text) hover:bg-(--color-surface) ${btnPress}`}
               >
                 Tutup
               </button>
