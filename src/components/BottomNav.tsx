@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { useMileageModal } from "@/lib/mileage-modal";
 import { useSelectedVehicle } from "@/lib/selected-vehicle";
+import { useTranslation } from "@/lib/i18n";
 
 function HomeIcon({ active }: { active: boolean }) {
   return (
@@ -85,6 +86,7 @@ export default function BottomNav() {
   const router = useRouter();
   const { openMileageModal, mileageModalOpen } = useMileageModal();
   const { selectedVehicleId, ready: selectionReady } = useSelectedVehicle();
+  const { t } = useTranslation();
 
   if (!user) return null;
 
@@ -163,7 +165,7 @@ export default function BottomNav() {
           }`}
         >
           <HomeIcon active={isHome} />
-          <span className="max-w-[4rem] truncate text-[9px] font-semibold sm:text-[10px]">Home</span>
+          <span className="max-w-[4rem] truncate text-[9px] font-semibold sm:text-[10px]">{t("nav.home")}</span>
         </Link>
 
         <Link
@@ -175,13 +177,13 @@ export default function BottomNav() {
           }`}
         >
           <OverviewIcon active={isOverview} />
-          <span className="max-w-[4rem] truncate text-[9px] font-semibold sm:text-[10px]">Overview</span>
+          <span className="max-w-[4rem] truncate text-[9px] font-semibold sm:text-[10px]">{t("nav.overview")}</span>
         </Link>
 
         <button
           type="button"
           onClick={handlePlus}
-          aria-label="Input kilometer"
+          aria-label={t("nav.ariaInputKm")}
           className={`flex min-w-0 flex-1 flex-col items-center gap-0.5 px-1 py-1 transition-colors ${
             mileageModalOpen
               ? "text-(--color-primary)"
@@ -197,13 +199,13 @@ export default function BottomNav() {
           >
             <PlusIcon active={mileageModalOpen} />
           </span>
-          <span className="max-w-[4rem] truncate text-[9px] font-semibold sm:text-[10px]">KM</span>
+          <span className="max-w-[4rem] truncate text-[9px] font-semibold sm:text-[10px]">{t("nav.km")}</span>
         </button>
 
         <button
           type="button"
           onClick={handleReminder}
-          aria-label="Buka reminder"
+          aria-label={t("nav.ariaOpenReminder")}
           className={`flex min-w-0 flex-1 flex-col items-center gap-0.5 px-1 py-1 transition-colors ${
             isReminder
               ? "text-(--color-primary)"
@@ -211,7 +213,7 @@ export default function BottomNav() {
           }`}
         >
           <BellIcon active={isReminder} />
-          <span className="max-w-[4rem] truncate text-[9px] font-semibold sm:text-[10px]">Reminder</span>
+          <span className="max-w-[4rem] truncate text-[9px] font-semibold sm:text-[10px]">{t("nav.reminder")}</span>
         </button>
 
         <Link
@@ -223,7 +225,7 @@ export default function BottomNav() {
           }`}
         >
           <ProfileIcon active={isProfile} />
-          <span className="max-w-[4rem] truncate text-[9px] font-semibold sm:text-[10px]">Profile</span>
+          <span className="max-w-[4rem] truncate text-[9px] font-semibold sm:text-[10px]">{t("nav.profile")}</span>
         </Link>
       </div>
     </div>

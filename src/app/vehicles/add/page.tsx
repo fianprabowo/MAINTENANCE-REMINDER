@@ -14,6 +14,7 @@ import type { MotorcycleCategory, MotorcycleModel } from "@/lib/types";
 import CustomSelect from "@/components/CustomSelect";
 import OdometerScanButton from "@/components/OdometerScanButton";
 import { toast } from "sonner";
+import { useTranslation } from "@/lib/i18n";
 
 // ---------------------------------------------------------------------------
 // Tipe Motor: drives the oil interval lookup (via `motorcycle_categories.slug`).
@@ -24,15 +25,11 @@ import { toast } from "sonner";
 // ---------------------------------------------------------------------------
 type TipeMotor = "matic" | "bebek" | "sport";
 
-const TIPE_MOTOR_CONFIG: Record<TipeMotor, { label: string; categorySlug: string }> = {
-  matic: { label: "Matic", categorySlug: "matic" },
-  bebek: { label: "Bebek", categorySlug: "bebek" },
-  sport: { label: "Sport", categorySlug: "sport" },
+const TIPE_MOTOR_CONFIG: Record<TipeMotor, { categorySlug: string }> = {
+  matic: { categorySlug: "matic" },
+  bebek: { categorySlug: "bebek" },
+  sport: { categorySlug: "sport" },
 };
-
-const TIPE_MOTOR_OPTIONS = (Object.entries(TIPE_MOTOR_CONFIG) as [TipeMotor, { label: string }][]).map(
-  ([value, cfg]) => ({ value, label: cfg.label }),
-);
 
 // "Lainnya / merek lain" sentinel — distinguishes "no choice yet" from
 // "user explicitly opted out of presets".
@@ -51,7 +48,17 @@ function buildYearOptions(showAll: boolean): { value: string; label: string }[] 
   });
 }
 
-function buildSpecSummary(mileage: string, tank: string, efficiency: string): string {
+/**
+ * Ringkas nilai spec (mileage/tank/eff) menjadi satu baris "12.500 km •
+ * 5,5 L • 45 km/L". `emptyLabel` di-inject dari luar supaya cocok dengan
+ * locale aktif (misal "Belum diisi" vs "Not filled").
+ */
+function buildSpecSummary(
+  mileage: string,
+  tank: string,
+  efficiency: string,
+  emptyLabel: string,
+): string {
   const parts: string[] = [];
 
   const km = mileage.trim();
@@ -66,7 +73,7 @@ function buildSpecSummary(mileage: string, tank: string, efficiency: string): st
   const effVal = efficiency.trim();
   if (effVal) parts.push(`${effVal.replace(".", ",")} km/L`);
 
-  return parts.length > 0 ? parts.join(" • ") : "Belum diisi";
+  return parts.length > 0 ? parts.join(" • ") : emptyLabel;
 }
 
 function ChevronIcon({ className }: { className?: string }) {
@@ -91,6 +98,17 @@ export default function AddVehiclePage() {
   const { user, loading: authLoading } = useAuth();
   const { setSelectedVehicleId } = useSelectedVehicle();
   const router = useRouter();
+  const { t } = useTranslation();
+
+  // Options di-generate di dalam komponen agar label ikut locale aktif.
+  const TIPE_MOTOR_OPTIONS = useMemo(
+    () => [
+      { value: "matic", label: t("vehiclesAdd.typeMatic") },
+      { value: "bebek", label: t("vehiclesAdd.typeBebek") },
+      { value: "sport", label: t("vehiclesAdd.typeSport") },
+    ],
+    [t],
+  );
 
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -141,9 +159,9 @@ export default function AddVehiclePage() {
     const arr = Array.from(set).sort((a, b) => a.localeCompare(b));
     return [
       ...arr.map((b) => ({ value: b, label: b })),
-      { value: OTHER_BRAND, label: "Lainnya / merek lain" },
+      { value: OTHER_BRAND, label: t("vehiclesAdd.otherBrand") },
     ];
-  }, [modelsForTipe]);
+  }, [modelsForTipe, t]);
 
   // Model dropdown: preset names for the chosen brand, plus a custom escape hatch.
   const modelNameOptions = useMemo(() => {
@@ -154,9 +172,9 @@ export default function AddVehiclePage() {
     }
     return [
       ...Array.from(set).sort((a, b) => a.localeCompare(b)).map((n) => ({ value: n, label: n })),
-      { value: OTHER_MODEL, label: "Lainnya / nama lain" },
+      { value: OTHER_MODEL, label: t("vehiclesAdd.otherModel") },
     ];
-  }, [modelsForTipe, selectedBrand]);
+  }, [modelsForTipe, selectedBrand, t]);
 
   // -------------------------------------------------------------------------
   // Fetch reference data once.
@@ -255,9 +273,21 @@ export default function AddVehiclePage() {
 
   const yearOptions = useMemo(() => buildYearOptions(showAllYears), [showAllYears]);
 
+  const specEmptyLabel = t("vehiclesAdd.specNotFilled");
   const specSummary = useMemo(
-    () => buildSpecSummary(form.initial_mileage, form.tank_capacity_l, form.fuel_efficiency_km_l),
-    [form.initial_mileage, form.tank_capacity_l, form.fuel_efficiency_km_l],
+    () =>
+      buildSpecSummary(
+        form.initial_mileage,
+        form.tank_capacity_l,
+        form.fuel_efficiency_km_l,
+        specEmptyLabel,
+      ),
+    [
+      form.initial_mileage,
+      form.tank_capacity_l,
+      form.fuel_efficiency_km_l,
+      specEmptyLabel,
+    ],
   );
 
   if (authLoading || !user) return null;
@@ -281,7 +311,7 @@ export default function AddVehiclePage() {
 
     const cat = categories.find((c) => c.slug === tipeConfig.categorySlug);
     if (!cat) {
-      toast.error("Kategori motor tidak ditemukan. Coba refresh halaman.");
+      toast.error(t("vehiclesAdd.categoryNotFound"));
       return;
     }
 
@@ -317,11 +347,11 @@ export default function AddVehiclePage() {
         await insertMileage(vehicle.id, parseInt(form.initial_mileage, 10));
       }
 
-      toast.success("Motor disimpan!");
+      toast.success(t("vehiclesAdd.savedToast"));
       setSelectedVehicleId(vehicle.id);
       router.push("/dashboard");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Gagal menambah motor");
+      toast.error(err instanceof Error ? err.message : t("vehiclesAdd.failedToast"));
     } finally {
       setLoading(false);
     }
@@ -364,7 +394,7 @@ export default function AddVehiclePage() {
         <button
           type="button"
           onClick={() => router.back()}
-          aria-label="Kembali"
+          aria-label={t("vehiclesAdd.back")}
           className="mb-5 flex h-10 w-10 items-center justify-center rounded-full bg-(--color-surface) text-(--color-text-secondary) shadow-sm transition-all hover:text-(--color-text) active:scale-95"
         >
           <svg
@@ -407,10 +437,10 @@ export default function AddVehiclePage() {
             </div>
             <div className="min-w-0">
               <h1 className="text-2xl font-extrabold tracking-tight text-(--color-text)">
-                Tambah Kendaraan
+                {t("vehiclesAdd.heroTitle")}
               </h1>
               <p className="mt-0.5 text-sm text-(--color-text-secondary)">
-                catat detail kendaraan anda
+                {t("vehiclesAdd.heroSubtitle")}
               </p>
             </div>
           </div>
@@ -419,12 +449,12 @@ export default function AddVehiclePage() {
         <form onSubmit={handleSubmit} noValidate className="space-y-4">
           {/* ---- Tipe Motor (drives oil interval + tank/eff defaults) -------- */}
           <div className={cardClass}>
-            <p className={sectionLabel}>Tipe *</p>
+            <p className={sectionLabel}>{t("vehiclesAdd.typeLabel")}</p>
             <CustomSelect
               options={TIPE_MOTOR_OPTIONS}
               value={tipeMotor}
               onChange={(v) => setTipeMotor(v as TipeMotor)}
-              placeholder="Pilih tipe motor"
+              placeholder={t("vehiclesAdd.typePlaceholder")}
               required
               maxHeight={260}
               error={submitted && !tipeMotor}
@@ -433,13 +463,13 @@ export default function AddVehiclePage() {
 
           {/* ---- Bagian utama: 3 field --------------------------------------- */}
           <div className={cardClass}>
-            <p className={sectionLabel}>Data utama</p>
+            <p className={sectionLabel}>{t("vehiclesAdd.mainDataTitle")}</p>
             <div className="space-y-3">
               <CustomSelect
                 options={brandOptions}
                 value={selectedBrand}
                 onChange={(v) => setSelectedBrand(v)}
-                placeholder={tipeMotor ? "Pilih merek" : "Pilih tipe motor dulu"}
+                placeholder={tipeMotor ? t("vehiclesAdd.brandPlaceholder") : t("vehiclesAdd.brandNeedsType")}
                 required
                 maxHeight={240}
                 error={submitted && !selectedBrand}
@@ -451,7 +481,7 @@ export default function AddVehiclePage() {
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
                   className={errorBorder(form.name)}
-                  placeholder="Nama motor *"
+                  placeholder={t("vehiclesAdd.namePlaceholderCustom")}
                   autoComplete="off"
                   required
                 />
@@ -469,7 +499,9 @@ export default function AddVehiclePage() {
                       }
                     }}
                     placeholder={
-                      selectedBrand ? "Pilih nama motor" : "Pilih merek dulu"
+                      selectedBrand
+                        ? t("vehiclesAdd.namePickerPlaceholder")
+                        : t("vehiclesAdd.namePickerNeedsBrand")
                     }
                     required
                     disabled={!selectedBrand}
@@ -482,7 +514,7 @@ export default function AddVehiclePage() {
                       value={form.name}
                       onChange={(e) => setForm({ ...form, name: e.target.value })}
                       className={errorBorder(form.name)}
-                      placeholder="Ketik nama motor *"
+                      placeholder={t("vehiclesAdd.nameTypeCustom")}
                       autoComplete="off"
                       required
                     />
@@ -494,7 +526,7 @@ export default function AddVehiclePage() {
                 options={yearOptions}
                 value={form.year}
                 onChange={(v) => setForm({ ...form, year: v })}
-                placeholder="Tahun produksi *"
+                placeholder={t("vehiclesAdd.yearPlaceholder")}
                 required
                 maxHeight={240}
                 error={submitted && !form.year}
@@ -504,9 +536,7 @@ export default function AddVehiclePage() {
                 onClick={() => setShowAllYears((s) => !s)}
                 className="-mt-1 text-xs font-semibold text-(--color-primary) transition-colors hover:underline"
               >
-                {showAllYears
-                  ? "Tampilkan 15 tahun terakhir"
-                  : "Lebih lama? Tampilkan 30 tahun"}
+                {showAllYears ? t("vehiclesAdd.yearShowRecent") : t("vehiclesAdd.yearShowAll")}
               </button>
             </div>
           </div>
@@ -520,9 +550,9 @@ export default function AddVehiclePage() {
               className="flex w-full items-start justify-between gap-3 text-left"
             >
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-(--color-text)">Spesifikasi Kendaraan</p>
+                <p className="text-sm font-semibold text-(--color-text)">{t("vehiclesAdd.specSectionTitle")}</p>
                 <p
-                  className={`mt-1 text-xs leading-relaxed ${hasSpecValues && specSummary !== "Belum diisi"
+                  className={`mt-1 text-xs leading-relaxed ${hasSpecValues && specSummary !== specEmptyLabel
                     ? "font-medium text-(--color-text-secondary)"
                     : "text-(--color-text-muted)"
                     }`}
@@ -555,7 +585,7 @@ export default function AddVehiclePage() {
                   {/* Kilometer — full width */}
                   <div className="space-y-2">
                     <span className={specFieldLabel}>
-                      Kilometer awal
+                      {t("vehiclesAdd.specInitialKm")}
                     </span>
                     <div className="flex gap-2">
                       <div className="relative min-w-0 flex-1">
@@ -565,7 +595,7 @@ export default function AddVehiclePage() {
                           value={form.initial_mileage}
                           onChange={(e) => setForm({ ...form, initial_mileage: e.target.value })}
                           className={specInputClass}
-                          placeholder="Contoh: 12500"
+                          placeholder={t("vehiclesAdd.specInitialKmPlaceholder")}
                           min={0}
                         />
                         <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xs font-semibold text-(--color-text-muted)">
@@ -584,7 +614,7 @@ export default function AddVehiclePage() {
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-2">
                       <span className={specFieldLabel}>
-                        Kapasitas Tangki
+                        {t("vehiclesAdd.specTank")}
                       </span>
                       <div className="relative">
                         <input
@@ -597,7 +627,7 @@ export default function AddVehiclePage() {
                             setForm({ ...form, tank_capacity_l: e.target.value });
                           }}
                           className={specInputClass}
-                          placeholder="5,5"
+                          placeholder={t("vehiclesAdd.specTankPlaceholder")}
                           min={0}
                         />
                         <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-(--color-text-muted)">
@@ -608,7 +638,7 @@ export default function AddVehiclePage() {
 
                     <div className="space-y-2">
                       <span className={specFieldLabel}>
-                        Efisiensi BBM
+                        {t("vehiclesAdd.specEfficiency")}
                       </span>
                       <div className="relative">
                         <input
@@ -621,7 +651,7 @@ export default function AddVehiclePage() {
                             setForm({ ...form, fuel_efficiency_km_l: e.target.value });
                           }}
                           className={specInputClass}
-                          placeholder="45"
+                          placeholder={t("vehiclesAdd.specEfficiencyPlaceholder")}
                           min={0}
                         />
                         <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-(--color-text-muted)">
@@ -636,7 +666,7 @@ export default function AddVehiclePage() {
                     {showNotesField ? (
                       <>
                         <span className={specFieldLabel}>
-                          Catatan
+                          {t("vehiclesAdd.specNotes")}
                         </span>
                         <textarea
                           value={form.notes}
@@ -646,7 +676,7 @@ export default function AddVehiclePage() {
                           }}
                           className={`${specInputClass} resize-none`}
                           rows={3}
-                          placeholder="Catatan opsional…"
+                          placeholder={t("vehiclesAdd.specNotesPlaceholder")}
                           autoFocus={notesOpen && !form.notes.trim()}
                         />
                       </>
@@ -656,7 +686,7 @@ export default function AddVehiclePage() {
                         onClick={() => setNotesOpen(true)}
                         className="flex w-full items-center gap-2 rounded-2xl border border-slate-200/70 bg-slate-50 px-4 py-3.5 text-left text-sm font-medium text-(--color-text-secondary) shadow-sm transition-all hover:border-slate-300/80 hover:bg-slate-100/80 focus:border-(--color-primary) focus:outline-none dark:border-(--color-border)/50 dark:bg-(--color-surface-alt) dark:focus:border-(--color-primary)"
                       >
-                        Tambah catatan
+                        {t("vehiclesAdd.specAddNotes")}
                       </button>
                     )}
                   </div>
@@ -682,10 +712,10 @@ export default function AddVehiclePage() {
                   <circle cx="12" cy="12" r="10" stroke="currentColor" strokeOpacity="0.25" strokeWidth="4" />
                   <path d="M4 12a8 8 0 0 1 8-8" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
                 </svg>
-                <span>Menyimpan…</span>
+                <span>{t("vehiclesAdd.submitting")}</span>
               </>
             ) : (
-              <span>Simpan</span>
+              <span>{t("vehiclesAdd.submit")}</span>
             )}
           </button>
         </form>

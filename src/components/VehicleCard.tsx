@@ -1,6 +1,9 @@
+"use client";
+
 import Link from "next/link";
 import { Vehicle } from "@/lib/types";
 import StatusBadge from "./StatusBadge";
+import { useTranslation } from "@/lib/i18n";
 
 interface VehicleCardProps {
   vehicle: Vehicle;
@@ -54,6 +57,7 @@ export default function VehicleCard({
   onPick,
   isActivePick,
 }: VehicleCardProps) {
+  const { t } = useTranslation();
   const typeIcon = "🏍️";
 
   const inner = (
@@ -80,8 +84,8 @@ export default function VehicleCard({
           {vehicle.status === "good" && (
             <span
               role="img"
-              aria-label="Good"
-              title="Good"
+              aria-label={t("vehicleCard.statusGoodLabel")}
+              title={t("vehicleCard.statusGoodLabel")}
               className="ml-1.5 inline-block h-2 w-2 rounded-full bg-emerald-500 align-middle"
             />
           )}
@@ -92,7 +96,7 @@ export default function VehicleCard({
         </div>
         {pickMode && (
           <p className="mt-2 text-[10px] font-semibold uppercase tracking-wide text-(--color-primary)">
-            {isActivePick ? "Aktif di Home" : "Tap untuk jadikan kendaraan utama"}
+            {isActivePick ? t("vehicleCard.activeAtHome") : t("vehicleCard.tapToSelect")}
           </p>
         )}
       </div>
@@ -123,7 +127,7 @@ export default function VehicleCard({
           href={`/vehicles/${vehicle.id}`}
           className="absolute right-2 top-2 z-10 rounded-lg bg-(--color-surface) px-2 py-1 text-[10px] font-bold text-(--color-primary) shadow-sm ring-1 ring-(--color-border)/60 transition-colors hover:bg-(--color-primary-soft)"
         >
-          Detail
+          {t("vehicleCard.detail")}
         </Link>
       </div>
     );

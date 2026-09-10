@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
+import { useTranslation } from "@/lib/i18n";
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -17,12 +18,17 @@ export default function ConfirmDialog({
   open,
   title,
   message,
-  confirmLabel = "Confirm",
-  cancelLabel = "Cancel",
+  confirmLabel,
+  cancelLabel,
   variant = "default",
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  // Default label ikut locale aktif — caller boleh tetap override lewat prop
+  // untuk copy yang lebih kontekstual (mis. "Hapus", "Keluar").
+  const { t } = useTranslation();
+  const resolvedConfirmLabel = confirmLabel ?? t("common.confirm");
+  const resolvedCancelLabel = cancelLabel ?? t("common.cancel");
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -93,7 +99,7 @@ export default function ConfirmDialog({
             onClick={onCancel}
             className="flex-1 rounded-2xl bg-(--color-surface-alt) py-3 text-sm font-semibold transition-colors hover:bg-(--color-border)"
           >
-            {cancelLabel}
+            {resolvedCancelLabel}
           </button>
           <button
             onClick={onConfirm}
@@ -103,7 +109,7 @@ export default function ConfirmDialog({
                 : "bg-(--color-primary) shadow-md shadow-(--color-primary)/30"
             }`}
           >
-            {confirmLabel}
+            {resolvedConfirmLabel}
           </button>
         </div>
       </div>

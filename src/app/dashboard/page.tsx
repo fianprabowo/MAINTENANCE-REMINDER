@@ -16,38 +16,52 @@ import StatusBadge from "@/components/StatusBadge";
 import EmptyVehicleState from "@/components/EmptyVehicleState";
 import NotificationBell from "@/components/NotificationBell";
 import { CardSkeleton, DetailSkeleton } from "@/components/LoadingSkeleton";
+import { useTranslation, type TranslationKey } from "@/lib/i18n";
 
-function getGreeting(): { text: string; emoji: string } {
+/**
+ * Greeting key per jam hari. Emoji tetap universal — hanya key-nya yang
+ * bergantung ke jam. Kita return `TranslationKey` supaya caller bisa lewat
+ * `t(...)` sendiri (satu source of truth, mudah dites).
+ */
+function getGreetingKey(): { key: TranslationKey; emoji: string } {
   const hour = new Date().getHours();
-  if (hour >= 5 && hour < 12) return { text: "Good Morning", emoji: "☀️" };
-  if (hour >= 12 && hour < 17) return { text: "Good Afternoon", emoji: "🌤️" };
-  if (hour >= 17 && hour < 21) return { text: "Good Evening", emoji: "🌇" };
-  return { text: "Good Night", emoji: "🌙" };
-}
-
-/** Teks singkat untuk `latest_mileage.created_at` (Bahasa Indonesia). */
-function formatRelativeMileageUpdate(iso: string | undefined): string {
-  if (!iso) return "Belum ada pembaruan KM";
-  const t = new Date(iso).getTime();
-  if (!Number.isFinite(t)) return "Belum ada pembaruan KM";
-  const diffMs = Date.now() - t;
-  const mins = Math.floor(diffMs / 60_000);
-  if (mins < 1) return "Update baru saja";
-  if (mins < 60) return `Update ${mins} menit lalu`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `Update ${hours} jam lalu`;
-  const days = Math.floor(hours / 24);
-  if (days === 1) return "Update 1 hari lalu";
-  if (days < 7) return `Update ${days} hari lalu`;
-  const weeks = Math.floor(days / 7);
-  if (weeks === 1) return "Update 1 minggu lalu";
-  if (weeks < 5) return `Update ${weeks} minggu lalu`;
-  return "Update lebih dari sebulan lalu";
+  if (hour >= 5 && hour < 12) return { key: "greeting.morning", emoji: "☀️" };
+  if (hour >= 12 && hour < 17) return { key: "greeting.afternoon", emoji: "🌤️" };
+  if (hour >= 17 && hour < 21) return { key: "greeting.evening", emoji: "🌇" };
+  return { key: "greeting.night", emoji: "🌙" };
 }
 
 export default function DashboardPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
+  const { t, formatNumber } = useTranslation();
+
+  /**
+   * Format relatif untuk `latest_mileage.created_at`. Dulu hardcoded Bahasa
+   * Indonesia; sekarang ikut locale via `t(...)`. Dijadikan closure supaya
+   * bisa akses `t` tanpa harus di-passing sebagai argumen.
+   */
+  const formatRelativeMileageUpdate = useCallback(
+    (iso: string | undefined): string => {
+      if (!iso) return t("dashboard.updateNever");
+      const ts = new Date(iso).getTime();
+      if (!Number.isFinite(ts)) return t("dashboard.updateNever");
+      const diffMs = Date.now() - ts;
+      const mins = Math.floor(diffMs / 60_000);
+      if (mins < 1) return t("dashboard.updateJustNow");
+      if (mins < 60) return t("dashboard.updateMinutesAgo", { n: mins });
+      const hours = Math.floor(mins / 60);
+      if (hours < 24) return t("dashboard.updateHoursAgo", { n: hours });
+      const days = Math.floor(hours / 24);
+      if (days === 1) return t("dashboard.updateOneDayAgo");
+      if (days < 7) return t("dashboard.updateDaysAgo", { n: days });
+      const weeks = Math.floor(days / 7);
+      if (weeks === 1) return t("dashboard.updateOneWeekAgo");
+      if (weeks < 5) return t("dashboard.updateWeeksAgo", { n: weeks });
+      return t("dashboard.updateOverAMonth");
+    },
+    [t],
+  );
   const { selectedVehicleId, setSelectedVehicleId, ready: selectionReady } = useSelectedVehicle();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [loadingList, setLoadingList] = useState(true);
@@ -257,6 +271,12 @@ export default function DashboardPage() {
   }
 
   if (vehicles.length === 0) {
+    const g = getGreetingKey();
+    // Empty-state footnote di-render dari string i18n; kita split di
+    // token `{km}` supaya bagian "KM" bisa tetap distyle bold seperti
+    // sebelumnya. Menghindari `dangerouslySetInnerHTML` demi keamanan.
+    const footnoteRaw = t("dashboard.emptyFootnote", { km: "__KM__" });
+    const [before, after] = footnoteRaw.split("__KM__");
     return (
       // min-h-screen on the wrapper + flex-1 on <main> gives the empty state
       // a full-viewport canvas so its internal `flex-1 justify-center`
@@ -267,17 +287,17 @@ export default function DashboardPage() {
         <main className="flex flex-1 flex-col px-4 pb-32 pt-6 sm:px-5 sm:pt-7">
           <div className="mb-5">
             <p className="text-sm text-(--color-text-secondary)">
-              {getGreeting().emoji} {getGreeting().text}
+              {g.emoji} {t(g.key)}
             </p>
             <h1 className="mt-0.5 text-2xl font-bold tracking-tight">{user.name}</h1>
           </div>
           <EmptyVehicleState
-            ariaLabel="Add your first vehicle"
+            ariaLabel={t("dashboard.emptyAddFirst")}
             footnote={
               <>
-                Setelah ada kendaraan, tombol{" "}
-                <span className="font-semibold text-(--color-text-secondary)">KM</span> di bar bawah
-                membuka input kilometer untuk kendaraan yang dipilih di Home.
+                {before}
+                <span className="font-semibold text-(--color-text-secondary)">{t("nav.km")}</span>
+                {after}
               </>
             }
           />
@@ -301,8 +321,8 @@ export default function DashboardPage() {
     );
   }
 
-  const greeting = getGreeting();
-  const { vehicle, latest_mileage, reminders, motorcycle_category, oil_service } = detail;
+  const greeting = getGreetingKey();
+  const { vehicle, latest_mileage, motorcycle_category, oil_service } = detail;
   const vid = vehicle.id;
   const currentKm = latest_mileage?.mileage ?? 0;
   const engineMid =
@@ -320,7 +340,9 @@ export default function DashboardPage() {
     vehicle.type === "motorcycle" && Boolean(motorcycle_category?.has_engine_oil_interval);
 
   const oilInsightSublabel =
-    engineMid != null ? `Sisa interval ±${engineMid.toLocaleString("id-ID")} km` : undefined;
+    engineMid != null
+      ? t("dashboard.engineOilInterval", { km: formatNumber(engineMid) })
+      : undefined;
 
   return (
     <div className="flex flex-col">
@@ -328,16 +350,16 @@ export default function DashboardPage() {
         <header className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="text-sm text-(--color-text-secondary)">
-              {greeting.emoji} {greeting.text}
+              {greeting.emoji} {t(greeting.key)}
             </p>
             <h1 className="mt-0.5 text-xl font-bold tracking-tight text-(--color-text)">{user.name}</h1>
           </div>
-          <nav className="flex flex-wrap items-center justify-end gap-2" aria-label="Aksi cepat">
+          <nav className="flex flex-wrap items-center justify-end gap-2" aria-label={t("dashboard.ariaQuickActions")}>
             <Link
               href="/overview"
               className="rounded-xl border border-(--color-border)/70 px-3 py-2 text-[11px] font-semibold text-(--color-text-secondary) transition-colors hover:border-(--color-border) hover:bg-(--color-surface-alt)"
             >
-              Ganti kendaraan
+              {t("dashboard.changeVehicle")}
             </Link>
             <NotificationBell />
           </nav>
@@ -367,17 +389,17 @@ export default function DashboardPage() {
             <div className="mt-3 flex flex-wrap items-end justify-between gap-2 border-t border-(--color-border)/50 pt-3">
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-(--color-text-muted)">
-                  KM terakhir
+                  {t("dashboard.lastKm")}
                 </p>
                 <p className="mt-0.5 text-base font-bold tabular-nums text-(--color-text)">
-                  {latest_mileage ? `${latest_mileage.mileage.toLocaleString("id-ID")} km` : "—"}
+                  {latest_mileage ? `${formatNumber(latest_mileage.mileage)} km` : "—"}
                 </p>
               </div>
               <p className="max-w-[11rem] text-right text-[11px] text-(--color-text-muted)">
                 {formatRelativeMileageUpdate(latest_mileage?.created_at)}
               </p>
             </div>
-            <p className="mt-2 text-[11px] font-semibold text-(--color-text-muted)">Detail kendaraan →</p>
+            <p className="mt-2 text-[11px] font-semibold text-(--color-text-muted)">{t("dashboard.vehicleDetail")}</p>
           </div>
         </Link>
 
@@ -393,10 +415,10 @@ export default function DashboardPage() {
             <OilLifeBar
               variant="engine"
               percent={enginePct}
-              label="Oli mesin"
+              label={t("dashboard.engineOil")}
               sublabel={oilInsightSublabel}
               density="compact"
-              insightHint="Tap untuk detail"
+              insightHint={t("dashboard.oilTapHint")}
             />
           </Link>
         )}
@@ -421,9 +443,9 @@ export default function DashboardPage() {
             🛠️
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)">Servis</p>
-            <p className="mt-0.5 text-sm font-bold text-(--color-text)">Riwayat servis</p>
-            <p className="mt-0.5 text-xs text-(--color-text-secondary)">Tanggal, KM, jenis servis</p>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)">{t("dashboard.service")}</p>
+            <p className="mt-0.5 text-sm font-bold text-(--color-text)">{t("dashboard.serviceHistory")}</p>
+            <p className="mt-0.5 text-xs text-(--color-text-secondary)">{t("dashboard.serviceHistorySub")}</p>
           </div>
           <span className="shrink-0 text-sm font-bold text-(--color-text-muted) transition-transform group-hover:translate-x-0.5">
             →
@@ -528,14 +550,14 @@ export default function DashboardPage() {
         })()} */}
 
         <section id="mileage-chart" className="scroll-mt-28 space-y-3">
-          <h2 className="text-xs font-bold uppercase tracking-wider text-(--color-text-muted)">Riwayat kilometer</h2>
+          <h2 className="text-xs font-bold uppercase tracking-wider text-(--color-text-muted)">{t("dashboard.mileageHistoryTitle")}</h2>
           {historyLoading ? (
             <div className="space-y-3">
               <CardSkeleton />
             </div>
           ) : (
             <div className="rounded-2xl border border-(--color-border)/70 bg-(--color-surface) p-4">
-              <h3 className="mb-2 text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)">Tren KM</h3>
+              <h3 className="mb-2 text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)">{t("dashboard.mileageTrend")}</h3>
               <MileageChart logs={historyLogs} />
             </div>
           )}

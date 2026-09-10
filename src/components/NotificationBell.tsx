@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useNotifications } from "@/lib/notifications-runner";
+import { useTranslation } from "@/lib/i18n";
 
 /**
  * Header bell icon with an unread-count badge that links to `/notifications`.
@@ -15,6 +16,7 @@ import { useNotifications } from "@/lib/notifications-runner";
  */
 export default function NotificationBell({ className = "" }: { className?: string }) {
   const { unreadCount, ready } = useNotifications();
+  const { t } = useTranslation();
   // Tiny mount delay so the count doesn't pop in jarringly on first paint.
   const [shown, setShown] = useState(false);
   useEffect(() => {
@@ -31,8 +33,8 @@ export default function NotificationBell({ className = "" }: { className?: strin
       href="/notifications"
       aria-label={
         has
-          ? `Notifikasi (${display} belum dibaca)`
-          : "Notifikasi"
+          ? t("notificationBell.ariaBadge", { n: display })
+          : t("notificationBell.ariaOpen")
       }
       className={`relative inline-flex h-10 w-10 items-center justify-center rounded-xl border border-(--color-border)/70 text-(--color-text-secondary) transition-all hover:border-(--color-border) hover:bg-(--color-surface-alt) active:scale-95 ${className}`}
     >

@@ -13,6 +13,7 @@ import { CardSkeleton } from "@/components/LoadingSkeleton";
 import SwipeableRow from "@/components/SwipeableRow";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import EmptyVehicleState from "@/components/EmptyVehicleState";
+import { useTranslation } from "@/lib/i18n";
 
 function PlusIcon({ className }: { className?: string }) {
   return (
@@ -37,6 +38,7 @@ export default function OverviewPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const { selectedVehicleId, setSelectedVehicleId } = useSelectedVehicle();
+  const { t } = useTranslation();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -104,14 +106,14 @@ export default function OverviewPage() {
       // user can immediately tap another card to set a new active vehicle.
       if (selectedVehicleId === target.id) {
         setSelectedVehicleId(null);
-        toast.success(`${target.name} dihapus. Pilih kendaraan lain sebagai utama.`);
+        toast.success(t("overview.deletedActiveToast", { name: target.name }));
       } else {
-        toast.success(`${target.name} dihapus`);
+        toast.success(t("overview.deletedToast", { name: target.name }));
       }
     } catch (err) {
       // Rollback the optimistic update on failure.
       setVehicles(previous);
-      toast.error(err instanceof Error ? err.message : "Gagal menghapus kendaraan");
+      toast.error(err instanceof Error ? err.message : t("overview.deleteFailed"));
     } finally {
       setDeleting(false);
       setPendingDelete(null);
@@ -135,10 +137,10 @@ export default function OverviewPage() {
           full viewport (which would put it behind the nav). */}
       <main className="flex flex-1 flex-col px-5 pb-32 pt-8">
         <div className="mb-6">
-          <p className="text-xs font-bold uppercase tracking-wider text-(--color-text-muted)">Overview</p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight">Semua kendaraan</h1>
+          <p className="text-xs font-bold uppercase tracking-wider text-(--color-text-muted)">{t("overview.eyebrow")}</p>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight">{t("overview.title")}</h1>
           <p className="mt-1 text-sm text-(--color-text-secondary)">
-            Tap kartu untuk menjadikan kendaraan utama, geser ke kiri untuk hapus.
+            {t("overview.subtitle")}
           </p>
         </div>
 
@@ -149,14 +151,14 @@ export default function OverviewPage() {
             ))}
           </div>
         ) : vehicles.length === 0 ? (
-          <EmptyVehicleState ariaLabel="Add your first vehicle" />
+          <EmptyVehicleState ariaLabel={t("overview.emptyCta")} />
         ) : (
           <>
             <div className="mb-6 grid grid-cols-3 gap-3">
               <div className="rounded-2xl bg-(--color-surface) p-3 text-center shadow-sm">
                 <p className="text-xl font-bold">{totalVehicles}</p>
                 <p className="mt-0.5 text-[10px] font-medium uppercase tracking-wider text-(--color-text-muted)">
-                  Vehicles
+                  {t("overview.statsVehicles")}
                 </p>
               </div>
               <div className="rounded-2xl bg-(--color-surface) p-3 text-center shadow-sm">
@@ -166,13 +168,13 @@ export default function OverviewPage() {
                   {needsAttention}
                 </p>
                 <p className="mt-0.5 text-[10px] font-medium uppercase tracking-wider text-(--color-text-muted)">
-                  Attention
+                  {t("overview.statsAttention")}
                 </p>
               </div>
               <div className="rounded-2xl bg-(--color-surface) p-3 text-center shadow-sm">
                 <p className="text-xl font-bold">{avgFuel}%</p>
                 <p className="mt-0.5 text-[10px] font-medium uppercase tracking-wider text-(--color-text-muted)">
-                  Avg Fuel
+                  {t("overview.statsAvgFuel")}
                 </p>
               </div>
             </div>
@@ -188,9 +190,9 @@ export default function OverviewPage() {
                 <PlusIcon className="h-6 w-6" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-(--color-primary)">Tambah kendaraan</p>
+                <p className="text-sm font-semibold text-(--color-primary)">{t("overview.addVehicle")}</p>
                 <p className="mt-0.5 text-xs text-(--color-text-secondary)">
-                  Daftarkan motor baru ke akunmu
+                  {t("overview.addSubtitle")}
                 </p>
               </div>
               <span className="shrink-0 text-(--color-primary)/60 transition-transform group-hover:translate-x-0.5">
@@ -200,7 +202,7 @@ export default function OverviewPage() {
 
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-xs font-semibold uppercase tracking-wider text-(--color-text-muted)">
-                Daftar kendaraan
+                {t("overview.listTitle")}
               </h2>
               <span className="rounded-full bg-(--color-surface) px-2.5 py-0.5 text-[10px] font-bold text-(--color-text-muted)">
                 {totalVehicles}
@@ -233,14 +235,14 @@ export default function OverviewPage() {
 
       <ConfirmDialog
         open={!!pendingDelete}
-        title="Hapus kendaraan?"
+        title={t("overview.deleteTitle")}
         message={
           pendingDelete
-            ? `${pendingDelete.name} beserta riwayat KM, oli, bensin, dan reminder akan dihapus permanen. Tindakan ini tidak bisa dibatalkan.`
+            ? t("overview.deleteMessage", { name: pendingDelete.name })
             : ""
         }
-        confirmLabel={deleting ? "Menghapus…" : "Hapus"}
-        cancelLabel="Batal"
+        confirmLabel={deleting ? t("overview.deleting") : t("overview.deleteConfirm")}
+        cancelLabel={t("common.cancel")}
         variant="danger"
         onConfirm={() => void confirmDelete()}
         onCancel={() => {

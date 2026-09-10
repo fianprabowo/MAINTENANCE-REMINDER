@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
+import { useTranslation } from "@/lib/i18n";
 
 function FieldError({ message }: { message?: string }) {
   if (!message) return null;
@@ -23,17 +24,18 @@ export default function LoginPageContent() {
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const { login } = useAuth();
   const router = useRouter();
+  const { t } = useTranslation();
 
   const isEmail = identifier.includes("@");
 
   const validateField = (field: string, value?: string) => {
     if (field === "identifier") {
       const v = value ?? identifier;
-      if (!v.trim()) return "Email or phone number is required";
+      if (!v.trim()) return t("login.errorIdentifier");
     }
     if (field === "password") {
       const v = value ?? password;
-      if (!v) return "Password is required";
+      if (!v) return t("login.errorPassword");
     }
   };
 
@@ -63,10 +65,10 @@ export default function LoginPageContent() {
         !isEmail ? identifier : null,
         password
       );
-      toast.success("Welcome back!");
+      toast.success(t("login.welcomeBack"));
       router.push("/dashboard");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Login failed");
+      toast.error(err instanceof Error ? err.message : t("login.failed"));
     } finally {
       setLoading(false);
     }
@@ -86,10 +88,10 @@ export default function LoginPageContent() {
         <div className="mb-10 text-center">
           <div className="mb-4 text-5xl">🚗</div>
           <h1 className="text-2xl font-bold uppercase tracking-wide">
-            Welcome Back
+            {t("login.title")}
           </h1>
           <p className="mt-2 text-sm text-(--color-text-secondary)">
-            Sign in to your maintenance tracker
+            {t("login.subtitle")}
           </p>
         </div>
 
@@ -102,7 +104,7 @@ export default function LoginPageContent() {
               onChange={(e) => { setIdentifier(e.target.value); if (touched.identifier) setErrors((p) => ({ ...p, identifier: validateField("identifier", e.target.value) })); }}
               onBlur={() => handleBlur("identifier")}
               className={`${inputClass} ${borderFor("identifier")}`}
-              placeholder="Email or phone number *"
+              placeholder={t("login.identifierPlaceholder")}
             />
           </div>
 
@@ -114,7 +116,7 @@ export default function LoginPageContent() {
               onChange={(e) => { setPassword(e.target.value); if (touched.password) setErrors((p) => ({ ...p, password: validateField("password", e.target.value) })); }}
               onBlur={() => handleBlur("password")}
               className={`${inputClass} ${borderFor("password")}`}
-              placeholder="Password *"
+              placeholder={t("login.passwordPlaceholder")}
             />
           </div>
 
@@ -123,15 +125,15 @@ export default function LoginPageContent() {
             disabled={loading}
             className="w-full rounded-2xl bg-(--color-primary) px-4 py-4 text-base font-bold text-white shadow-lg shadow-(--color-primary)/30 transition-all hover:brightness-110 active:scale-[0.98] active:brightness-90 disabled:opacity-50"
           >
-            {loading ? "Signing in..." : "Sign In"}
+            {loading ? t("login.submitting") : t("login.submit")}
           </button>
         </form>
       </div>
 
       <p className="text-center text-xs text-(--color-text-muted)">
-        Don&apos;t have an account?{" "}
+        {t("login.noAccount")}{" "}
         <Link href="/register" className="font-semibold text-(--color-primary)">
-          Sign up
+          {t("login.signUp")}
         </Link>
       </p>
     </div>

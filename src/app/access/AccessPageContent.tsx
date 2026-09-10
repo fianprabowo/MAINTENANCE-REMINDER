@@ -5,9 +5,9 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { supabase, assertSupabaseConfigured } from "@/lib/supabase/client";
 import { toast } from "sonner";
+import { useTranslation } from "@/lib/i18n";
 
 const MAX_ACCESS_CODE_LENGTH = 10;
-const INVALID_ACCESS_CODE_MESSAGE = "Invalid access code. Please check and try again.";
 const SIMULATED_VERIFICATION_DELAY_MS = 200;
 
 export default function AccessPageContent() {
@@ -18,6 +18,7 @@ export default function AccessPageContent() {
   const inputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
+  const { t } = useTranslation();
 
   useEffect(() => {
     if (!authLoading && user) {
@@ -37,16 +38,18 @@ export default function AccessPageContent() {
     setError(null);
     const trimmed = code.trim();
     if (!trimmed) {
-      setError("Please enter your access code.");
+      setError(t("access.errorEmpty"));
       return;
     }
+
+    const invalidMessage = t("access.errorInvalid");
 
     if (trimmed.length > MAX_ACCESS_CODE_LENGTH) {
       setLoading(true);
       await new Promise((resolve) => setTimeout(resolve, SIMULATED_VERIFICATION_DELAY_MS));
       setLoading(false);
-      setError(INVALID_ACCESS_CODE_MESSAGE);
-      toast.error(INVALID_ACCESS_CODE_MESSAGE);
+      setError(invalidMessage);
+      toast.error(invalidMessage);
       return;
     }
 
@@ -54,7 +57,7 @@ export default function AccessPageContent() {
     try {
       assertSupabaseConfigured();
     } catch {
-      const msg = "App is not configured. Please contact support.";
+      const msg = t("common.notConfigured");
       setError(msg);
       toast.error(msg);
       setLoading(false);
@@ -74,14 +77,14 @@ export default function AccessPageContent() {
       };
 
       if (!res.ok) {
-        const msg = payload.error ?? INVALID_ACCESS_CODE_MESSAGE;
+        const msg = payload.error ?? invalidMessage;
         setError(msg);
         toast.error(msg);
         return;
       }
 
       if (!payload.access_token || !payload.refresh_token) {
-        const msg = "Invalid response from server.";
+        const msg = t("access.errorInvalidResponse");
         setError(msg);
         toast.error(msg);
         return;
@@ -97,10 +100,10 @@ export default function AccessPageContent() {
         return;
       }
 
-      toast.success("Welcome!");
+      toast.success(t("access.signedIn"));
       router.replace("/dashboard");
     } catch {
-      const msg = "Something went wrong. Please try again.";
+      const msg = t("common.somethingWrong");
       setError(msg);
       toast.error(msg);
     } finally {
@@ -113,7 +116,7 @@ export default function AccessPageContent() {
       <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-slate-50 via-white to-slate-100 dark:from-slate-950 dark:via-slate-900 dark:to-black">
         <div
           role="status"
-          aria-label="Loading"
+          aria-label={t("common.loading")}
           className="h-6 w-6 animate-spin rounded-full border-2 border-slate-200 border-t-blue-500 dark:border-slate-700 dark:border-t-blue-400"
         />
       </div>
@@ -158,14 +161,14 @@ export default function AccessPageContent() {
               </svg>
 
               <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">
-                Welcome
+                {t("access.welcome")}
               </h1>
             </div>
 
             <form onSubmit={handleSubmit} noValidate className="space-y-5">
               <div>
                 <label htmlFor="access-code" className="sr-only">
-                  Access code
+                  {t("access.codeLabel")}
                 </label>
                 <div className="relative">
                   <input
@@ -185,7 +188,7 @@ export default function AccessPageContent() {
                     aria-invalid={Boolean(error)}
                     aria-describedby={error ? "access-error" : undefined}
                     disabled={loading}
-                    placeholder="Enter access code"
+                    placeholder={t("access.codePlaceholder")}
                     className={`h-14 w-full rounded-2xl border pl-4 pr-12 font-mono text-lg tracking-widest text-slate-900 outline-none transition-all placeholder:font-sans placeholder:text-base placeholder:tracking-normal placeholder:text-slate-400 focus:ring-4 disabled:opacity-60 dark:text-white dark:placeholder:text-slate-500 ${
                       error
                         ? "border-red-300 focus:border-red-500 focus:ring-red-100 dark:border-red-800/60 dark:focus:border-red-500 dark:focus:ring-red-950/40"
@@ -195,7 +198,7 @@ export default function AccessPageContent() {
                   <button
                     type="button"
                     onClick={() => setShowCode((v) => !v)}
-                    aria-label={showCode ? "Hide access code" : "Show access code"}
+                    aria-label={showCode ? t("access.hideCode") : t("access.showCode")}
                     tabIndex={-1}
                     className="absolute inset-y-0 right-3 my-auto flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-700/50 dark:hover:text-slate-200"
                   >
@@ -275,23 +278,23 @@ export default function AccessPageContent() {
                         strokeLinecap="round"
                       />
                     </svg>
-                    <span>Checking Access...</span>
+                    <span>{t("access.submitting")}</span>
                   </>
                 ) : (
                   <>
-                    <span>Continue</span>
+                    <span>{t("access.submit")}</span>
                   </>
                 )}
               </button>
             </form>
 
             <p className="mt-8 text-center text-xs text-slate-500 dark:text-slate-400">
-              Don&apos;t have an access code?{" "}
+              {t("access.noCode")}{" "}
               <a
                 href="mailto:support@example.com"
                 className="font-medium text-sky-500 transition-colors hover:text-sky-600 dark:text-sky-400 dark:hover:text-sky-300"
               >
-                Contact support
+                {t("access.contactSupport")}
               </a>
             </p>
           </div>

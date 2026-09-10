@@ -15,30 +15,41 @@ import {
 import type { AppNotification } from "@/lib/types";
 import { CardSkeleton } from "@/components/LoadingSkeleton";
 import SwipeableRow from "@/components/SwipeableRow";
+import { useTranslation } from "@/lib/i18n";
 
 /* ──────────────────────────────────────────────────────────────────
  * Helpers
  * ──────────────────────────────────────────────────────────────── */
 
-function relativeTime(iso: string): string {
-  const t = new Date(iso).getTime();
-  if (!Number.isFinite(t)) return "";
-  const diff = Date.now() - t;
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return "Baru saja";
-  if (mins < 60) return `${mins} menit lalu`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours} jam lalu`;
-  const days = Math.floor(hours / 24);
-  if (days === 1) return "Kemarin";
-  if (days < 7) return `${days} hari lalu`;
-  const weeks = Math.floor(days / 7);
-  if (weeks < 5) return `${weeks} minggu lalu`;
-  return new Date(iso).toLocaleDateString("id-ID", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+/**
+ * Hook `useRelativeTime`.
+ *
+ * Formatter waktu relatif ("2 mnt lalu", "kemarin", dst) yang ikut
+ * locale aktif. Dibuat sebagai hook agar `t` dan `formatDate` tetap
+ * memory-stable per render — kalau kita return closure "beku", React
+ * tidak bisa mendeteksi perubahan locale.
+ */
+function useRelativeTime() {
+  const { t, formatDate } = useTranslation();
+  return useCallback(
+    (iso: string): string => {
+      const ts = new Date(iso).getTime();
+      if (!Number.isFinite(ts)) return "";
+      const diff = Date.now() - ts;
+      const mins = Math.floor(diff / 60_000);
+      if (mins < 1) return t("notifications.justNow");
+      if (mins < 60) return t("notifications.minutesAgo", { n: mins });
+      const hours = Math.floor(mins / 60);
+      if (hours < 24) return t("notifications.hoursAgo", { n: hours });
+      const days = Math.floor(hours / 24);
+      if (days === 1) return t("notifications.yesterday");
+      if (days < 7) return t("notifications.daysAgo", { n: days });
+      const weeks = Math.floor(days / 7);
+      if (weeks < 5) return t("notifications.weeksAgo", { n: weeks });
+      return formatDate(iso, { day: "numeric", month: "short", year: "numeric" });
+    },
+    [t, formatDate],
+  );
 }
 
 function kindIcon(kind: string): string {
@@ -71,6 +82,8 @@ export default function NotificationsPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const { refresh: refreshGlobal } = useNotifications();
+  const { t } = useTranslation();
+  const relativeTime = useRelativeTime();
 
   const [items, setItems] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(true);
@@ -94,11 +107,11 @@ export default function NotificationsPage() {
       });
       setItems(list);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Gagal memuat notifikasi");
+      toast.error(err instanceof Error ? err.message : t("notifications.loadFailed"));
     } finally {
       setLoading(false);
     }
-  }, [user, filter]);
+  }, [user, filter, t]);
 
   useEffect(() => {
     void load();
@@ -126,13 +139,13 @@ export default function NotificationsPage() {
           setItems((prev) =>
             prev.map((x) => (x.id === n.id ? { ...x, read_at: null } : x)),
           );
-          toast.error(err instanceof Error ? err.message : "Gagal menandai dibaca");
+          toast.error(err instanceof Error ? err.message : t("notifications.markReadFailed"));
           return;
         }
       }
       if (n.link_to) router.push(n.link_to);
     },
-    [router, refreshGlobal],
+    [router, refreshGlobal, t],
   );
 
   const handleMarkAllRead = useCallback(async () => {
@@ -144,12 +157,12 @@ export default function NotificationsPage() {
     try {
       await markAllNotificationsRead();
       await refreshGlobal();
-      toast.success("Semua ditandai dibaca");
+      toast.success(t("notifications.markAllToast"));
     } catch (err) {
       setItems(previous);
-      toast.error(err instanceof Error ? err.message : "Gagal menandai semua");
+      toast.error(err instanceof Error ? err.message : t("notifications.markAllFailed"));
     }
-  }, [items, unreadCount, refreshGlobal]);
+  }, [items, unreadCount, refreshGlobal, t]);
 
   const handleDelete = useCallback(
     async (n: AppNotification) => {
@@ -163,10 +176,10 @@ export default function NotificationsPage() {
         await refreshGlobal();
       } catch (err) {
         setItems(previous);
-        toast.error(err instanceof Error ? err.message : "Gagal menghapus");
+        toast.error(err instanceof Error ? err.message : t("notifications.deleteFailed"));
       }
     },
-    [items, refreshGlobal],
+    [items, refreshGlobal, t],
   );
 
   if (authLoading || !user) return null;
@@ -178,12 +191,12 @@ export default function NotificationsPage() {
         <header className="flex items-center justify-between gap-3">
           <div>
             <h1 className="text-xl font-bold tracking-tight text-(--color-text)">
-              Notifikasi
+              {t("notifications.title")}
             </h1>
             <p className="mt-0.5 text-xs text-(--color-text-secondary)">
               {unreadCount > 0
-                ? `${unreadCount} belum dibaca`
-                : "Semua sudah dibaca"}
+                ? t("notifications.subtitleUnread", { n: unreadCount })
+                : t("notifications.subtitleAllRead")}
             </p>
           </div>
           {unreadCount > 0 ? (
@@ -192,7 +205,7 @@ export default function NotificationsPage() {
               onClick={() => void handleMarkAllRead()}
               className="rounded-xl border border-(--color-border)/70 px-3 py-2 text-[11px] font-semibold text-(--color-text-secondary) transition-colors hover:border-(--color-border) hover:bg-(--color-surface-alt)"
             >
-              Tandai semua dibaca
+              {t("notifications.markAllRead")}
             </button>
           ) : null}
         </header>
@@ -201,8 +214,8 @@ export default function NotificationsPage() {
         <div className="inline-flex w-fit rounded-full border border-(--color-border)/60 bg-(--color-surface) p-0.5 text-[11px] font-semibold">
           {(
             [
-              { v: "all" as const, label: "Semua" },
-              { v: "unread" as const, label: "Belum dibaca" },
+              { v: "all" as const, label: t("notifications.filterAll") },
+              { v: "unread" as const, label: t("notifications.filterUnread") },
             ]
           ).map(({ v, label }) => {
             const active = filter === v;
@@ -235,7 +248,7 @@ export default function NotificationsPage() {
         ) : (
           <>
             <p className="text-[11px] text-(--color-text-muted)">
-              Tap untuk buka, geser ke kiri untuk hapus.
+              {t("notifications.listHint")}
             </p>
             {/* role=list/listitem on divs because SwipeableRow renders a
                 `<div>` and HTML doesn't allow `<div>` as direct child of
@@ -253,6 +266,7 @@ export default function NotificationsPage() {
                     <NotificationCard
                       notification={n}
                       onTap={() => void handleTap(n)}
+                      relativeTime={relativeTime}
                     />
                   </SwipeableRow>
                 </div>
@@ -272,10 +286,13 @@ export default function NotificationsPage() {
 function NotificationCard({
   notification: n,
   onTap,
+  relativeTime,
 }: {
   notification: AppNotification;
   onTap: () => void;
+  relativeTime: (iso: string) => string;
 }) {
+  const { t } = useTranslation();
   const tone = kindTone(n.kind);
   const isUnread = !n.read_at;
 
@@ -283,7 +300,7 @@ function NotificationCard({
     <button
       type="button"
       onClick={onTap}
-      aria-label={`Buka notifikasi ${n.title}`}
+      aria-label={t("notifications.ariaOpen", { title: n.title })}
       className={`relative flex w-full items-start gap-3 rounded-2xl border ${tone.ring} bg-(--color-surface) p-4 text-left shadow-sm transition-all hover:shadow-md active:scale-[0.99] ${
         isUnread ? "ring-1 ring-(--color-primary)/20" : ""
       }`}
@@ -299,7 +316,7 @@ function NotificationCard({
           <p className="text-sm font-bold text-(--color-text)">{n.title}</p>
           {isUnread ? (
             <span
-              aria-label="Belum dibaca"
+              aria-label={t("notifications.ariaUnread")}
               className="mt-1.5 inline-block h-2 w-2 shrink-0 rounded-full bg-(--color-primary)"
             />
           ) : null}
@@ -316,6 +333,7 @@ function NotificationCard({
 }
 
 function EmptyState({ filter }: { filter: "all" | "unread" }) {
+  const { t } = useTranslation();
   const isUnread = filter === "unread";
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-(--color-border)/70 bg-(--color-surface)/50 px-6 py-16 text-center">
@@ -324,19 +342,17 @@ function EmptyState({ filter }: { filter: "all" | "unread" }) {
       </div>
       <div>
         <p className="text-sm font-semibold text-(--color-text)">
-          {isUnread ? "Tidak ada yang baru" : "Belum ada notifikasi"}
+          {isUnread ? t("notifications.emptyUnreadTitle") : t("notifications.emptyAllTitle")}
         </p>
         <p className="mt-1 text-xs text-(--color-text-secondary)">
-          {isUnread
-            ? "Semua sudah dibaca. Notifikasi baru akan muncul di sini."
-            : "Tambahkan reminder untuk kendaraanmu, kami akan kasih tahu kalau sudah waktunya servis."}
+          {isUnread ? t("notifications.emptyUnreadHint") : t("notifications.emptyAllHint")}
         </p>
       </div>
       <Link
         href="/overview"
         className="mt-2 rounded-xl border border-(--color-border)/70 px-4 py-2 text-xs font-semibold text-(--color-text-secondary) transition-colors hover:border-(--color-border) hover:bg-(--color-surface-alt)"
       >
-        Buka kendaraan
+        {t("notifications.openVehiclesCta")}
       </Link>
     </div>
   );

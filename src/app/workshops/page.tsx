@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth";
 import { fetchMotorcycleCategories } from "@/lib/supabase";
 import type { MotorcycleCategory } from "@/lib/types";
 import { DetailSkeleton } from "@/components/LoadingSkeleton";
+import { useTranslation } from "@/lib/i18n";
 
 const WorkshopMap = dynamic(() => import("@/components/WorkshopMap"), {
   ssr: false,
@@ -19,6 +20,7 @@ function WorkshopsContent() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { t } = useTranslation();
   const [categories, setCategories] = useState<MotorcycleCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [brand, setBrand] = useState("");
@@ -59,7 +61,7 @@ function WorkshopsContent() {
 
   const locate = useCallback(() => {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
-      setGeoError("Peramban tidak mendukung lokasi.");
+      setGeoError(t("workshops.unsupportedGeo"));
       return;
     }
     setGeoError(null);
@@ -69,13 +71,13 @@ function WorkshopsContent() {
         setLng(pos.coords.longitude);
       },
       () => {
-        setGeoError("Izin lokasi ditolak atau tidak tersedia. Peta memakai titik perkiraan.");
+        setGeoError(t("workshops.permissionDenied"));
         setLat(null);
         setLng(null);
       },
       { enableHighAccuracy: true, timeout: 12_000, maximumAge: 60_000 },
     );
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     locate();
@@ -87,10 +89,13 @@ function WorkshopsContent() {
   );
 
   const mapsQuery = useMemo(() => {
-    const b = brand.trim() || "motor";
+    // Query string di-generate lewat i18n key `workshops.mapsQuery`. Kita
+    // tetap fallback ke "motor" agar hasil pencarian tidak kosong ketika
+    // input merek dibiarkan default.
+    const b = brand.trim() || (brand ? brand : "motor");
     const typeHint = activeCategory?.name_display ? ` ${activeCategory.name_display}` : "";
-    return `bengkel resmi ${b}${typeHint} terdekat`;
-  }, [brand, activeCategory]);
+    return t("workshops.mapsQuery", { brand: b, type: typeHint });
+  }, [brand, activeCategory, t]);
 
   const googleMapsUrl = useMemo(() => {
     const q = encodeURIComponent(mapsQuery);
@@ -112,7 +117,7 @@ function WorkshopsContent() {
           onClick={() => router.back()}
           className="mb-4 text-sm font-semibold text-(--color-text-secondary) transition-colors hover:text-(--color-text)"
         >
-          ← Back
+          ← {t("workshops.back")}
         </button>
 
         {loading ? (
@@ -120,9 +125,9 @@ function WorkshopsContent() {
         ) : (
           <>
             <div className="mb-6">
-              <h1 className="text-2xl font-extrabold tracking-tight">Bengkel resmi</h1>
+              <h1 className="text-2xl font-extrabold tracking-tight">{t("workshops.title")}</h1>
               <p className="mt-1 text-sm text-(--color-text-secondary)">
-                Peta posisi Anda dan pintasan pencarian bengkel resmi berdasarkan merek dan jenis motor.
+                {t("workshops.subtitle")}
               </p>
             </div>
 
@@ -134,7 +139,7 @@ function WorkshopsContent() {
                 onClick={locate}
                 className="rounded-full bg-(--color-surface) px-4 py-2 text-xs font-bold shadow-sm ring-1 ring-(--color-border)/60 transition-all hover:shadow-md"
               >
-                Refresh lokasi
+                {t("workshops.refreshLocation")}
               </button>
               {geoError && (
                 <span className="self-center text-xs font-medium text-amber-700 dark:text-amber-400/90">
@@ -145,20 +150,20 @@ function WorkshopsContent() {
 
             <div className="mt-6 space-y-3">
               <label className="text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)">
-                Merek motor
+                {t("workshops.brandLabel")}
               </label>
               <input
                 type="text"
                 value={brand}
                 onChange={(e) => setBrand(e.target.value)}
                 className="w-full rounded-2xl border border-(--color-border) bg-(--color-bg) px-4 py-3.5 text-sm outline-none focus:border-(--color-primary) focus:ring-2 focus:ring-(--color-primary)/20"
-                placeholder="Contoh: Honda, Yamaha, Kawasaki…"
+                placeholder={t("workshops.brandPlaceholder")}
               />
             </div>
 
             <div className="mt-5">
               <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)">
-                Jenis motor (dari database)
+                {t("workshops.typeLabel")}
               </p>
               <div className="flex flex-wrap gap-2">
                 <button
@@ -170,7 +175,7 @@ function WorkshopsContent() {
                       : "bg-(--color-surface) text-(--color-text-secondary) ring-1 ring-(--color-border)/60"
                   }`}
                 >
-                  Semua
+                  {t("workshops.typeAll")}
                 </button>
                 {categories.map((c) => (
                   <button
@@ -194,7 +199,7 @@ function WorkshopsContent() {
 
             <div className="mt-8 space-y-3">
               <p className="text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)">
-                Buka di aplikasi peta
+                {t("workshops.openInMap")}
               </p>
               <a
                 href={googleMapsUrl}
@@ -202,7 +207,7 @@ function WorkshopsContent() {
                 rel="noopener noreferrer"
                 className="block w-full rounded-3xl bg-(--color-primary) py-4 text-center text-sm font-bold text-white shadow-lg shadow-(--color-primary)/30 transition-all hover:brightness-110 active:scale-[0.99]"
               >
-                Google Maps — {mapsQuery}
+                {t("workshops.googleMapsCta", { q: mapsQuery })}
               </a>
               <a
                 href={appleMapsUrl}
@@ -210,13 +215,12 @@ function WorkshopsContent() {
                 rel="noopener noreferrer"
                 className="block w-full rounded-3xl border border-(--color-border) bg-(--color-surface) py-3.5 text-center text-sm font-bold shadow-sm transition-all hover:shadow-md"
               >
-                Apple Maps
+                {t("workshops.appleMapsCta")}
               </a>
             </div>
 
             <p className="mt-6 text-center text-[11px] leading-relaxed text-(--color-text-muted)">
-              Hasil pencarian disediakan oleh layanan peta pihak ketiga. Verifikasi alamat bengkel resmi di situs
-              merek jika perlu.
+              {t("workshops.disclaimer")}
             </p>
           </>
         )}

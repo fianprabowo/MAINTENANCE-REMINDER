@@ -17,6 +17,7 @@ import StatusBadge from "@/components/StatusBadge";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { DetailSkeleton } from "@/components/LoadingSkeleton";
 import { toast } from "sonner";
+import { useTranslation } from "@/lib/i18n";
 
 const btnPress = "transition-all duration-200 active:scale-95";
 
@@ -43,6 +44,7 @@ export default function VehicleDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
+  const { t, formatNumber, formatDate, locale } = useTranslation();
   const [detail, setDetail] = useState<VehicleDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -205,7 +207,7 @@ export default function VehicleDetailPage() {
       // Broadcast so reminders/notifications/dashboard re-derive their
       // status from the new max odometer reading.
       window.dispatchEvent(new CustomEvent("mr:vehicle-data-changed"));
-      toast.success("Catatan KM dihapus");
+      toast.success(t("vehicleDetail.mileageDeleted"));
       // Refresh the detail card too — current KM may have changed if we
       // just deleted the latest entry. Fire-and-forget; optimistic state
       // already covers the timeline.
@@ -214,20 +216,20 @@ export default function VehicleDetailPage() {
     } catch (err) {
       // Rollback optimistic removal so the timeline reflects truth.
       setHistoryLogs(previous);
-      toast.error(err instanceof Error ? err.message : "Gagal menghapus");
+      toast.error(err instanceof Error ? err.message : t("vehicleDetail.mileageDeleteFailed"));
     } finally {
       setDeletingMileage(false);
     }
-  }, [pendingDeleteMileage, id, historyLogs, refreshVehicleData]);
+  }, [pendingDeleteMileage, id, historyLogs, refreshVehicleData, t]);
 
   const handleDelete = async () => {
     setDeleting(true);
     try {
       await deleteVehicle(id as string);
-      toast.success("Vehicle deleted");
+      toast.success(t("vehicleDetail.vehicleDeleted"));
       router.replace("/dashboard");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to delete");
+      toast.error(err instanceof Error ? err.message : t("vehicleDetail.vehicleDeleteFailed"));
       setDeleting(false);
       setConfirmDelete(false);
     }
@@ -254,7 +256,7 @@ export default function VehicleDetailPage() {
                 onClick={() => router.push("/dashboard")}
                 className={`rounded-lg px-1 py-0.5 text-sm font-semibold text-(--color-text-secondary) hover:text-(--color-text) ${btnPress}`}
               >
-                ← Kembali
+                ← {t("vehicleDetail.back")}
               </button>
 
               {!confirmDelete ? (
@@ -262,8 +264,8 @@ export default function VehicleDetailPage() {
                   type="button"
                   onClick={() => setConfirmDelete(true)}
                   className={`flex h-9 w-9 items-center justify-center rounded-lg bg-red-50 text-red-500 hover:bg-red-100 dark:bg-red-900/15 dark:text-red-400 dark:hover:bg-red-900/30 ${btnPress}`}
-                  title="Hapus kendaraan"
-                  aria-label="Hapus kendaraan"
+                  title={t("vehicleDetail.deleteTitle")}
+                  aria-label={t("vehicleDetail.deleteAria")}
                 >
                   <TrashIcon className="h-5 w-5" />
                 </button>
@@ -274,7 +276,7 @@ export default function VehicleDetailPage() {
                     onClick={() => setConfirmDelete(false)}
                     className={`rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700 ${btnPress}`}
                   >
-                    Batal
+                    {t("vehicleDetail.cancelSlim")}
                   </button>
                   <button
                     type="button"
@@ -282,7 +284,7 @@ export default function VehicleDetailPage() {
                     disabled={deleting}
                     className={`rounded-lg bg-red-100 px-3 py-1.5 text-xs font-bold text-red-600 hover:bg-red-200 disabled:pointer-events-none disabled:opacity-50 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50 ${btnPress}`}
                   >
-                    {deleting ? "…" : "Hapus"}
+                    {deleting ? "…" : t("vehicleDetail.deleteSlim")}
                   </button>
                 </div>
               )}
@@ -307,15 +309,27 @@ export default function VehicleDetailPage() {
             {/* Ringkasan — 1 section, grid 2 kolom, card ringan */}
             <section className="grid grid-cols-2 gap-3">
               <StatCard
-                label="KM"
-                value={currentKm !== undefined ? currentKm.toLocaleString("id-ID") : "—"}
-                sub={currentKm !== undefined ? "odometer terkini" : "Ketuk untuk update"}
+                label={t("vehicleDetail.statKm")}
+                value={currentKm !== undefined ? formatNumber(currentKm) : "—"}
+                sub={currentKm !== undefined ? t("vehicleDetail.statKmSubActive") : t("vehicleDetail.statKmSubEmpty")}
                 onPress={openMileageModal}
                 accent
               />
-              <StatCard label="Fuel" value={`${detail.vehicle.fuel_level}%`} sub="level tangki" />
-              <StatCard label="Reminder" value={`${reminderCount}`} sub={reminderCount === 1 ? "aktif" : "aktif"} />
-              <StatCard label="Tipe" value={kategori} sub={detail.vehicle.type === "motorcycle" ? "motor" : "mobil"} />
+              <StatCard
+                label={t("vehicleDetail.statFuel")}
+                value={`${detail.vehicle.fuel_level}%`}
+                sub={t("vehicleDetail.statFuelSub")}
+              />
+              <StatCard
+                label={t("vehicleDetail.statReminder")}
+                value={`${reminderCount}`}
+                sub={t("vehicleDetail.statReminderSub")}
+              />
+              <StatCard
+                label={t("vehicleDetail.statType")}
+                value={kategori}
+                sub={detail.vehicle.type === "motorcycle" ? t("vehicleDetail.statTypeMotorcycle") : t("vehicleDetail.statTypeCar")}
+              />
             </section>
 
             {/* Action utama + sekunder */}
@@ -325,13 +339,13 @@ export default function VehicleDetailPage() {
                   href={`/vehicles/${id}/service-history`}
                   className={`block rounded-xl bg-gray-100 py-3 text-center text-sm font-semibold text-gray-700 hover:bg-gray-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700 ${btnPress}`}
                 >
-                  Riwayat servis
+                  {t("vehicleDetail.ctaServiceHistory")}
                 </Link>
                 <Link
                   href={`/vehicles/${id}/reminder`}
                   className={`block rounded-xl bg-gray-100 py-3 text-center text-sm font-semibold text-gray-700 hover:bg-gray-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700 ${btnPress}`}
                 >
-                  Reminder
+                  {t("vehicleDetail.ctaReminder")}
                 </Link>
               </div>
               <Link
@@ -343,9 +357,9 @@ export default function VehicleDetailPage() {
                     🩺
                   </span>
                   <span className="flex flex-col">
-                    <span>Kondisi part</span>
+                    <span>{t("vehicleDetail.ctaConditionTitle")}</span>
                     <span className="text-[11px] font-normal text-(--color-text-secondary)">
-                      Cek umur tiap komponen
+                      {t("vehicleDetail.ctaConditionSub")}
                     </span>
                   </span>
                 </span>
@@ -362,11 +376,11 @@ export default function VehicleDetailPage() {
             >
               <div className="mb-3 flex items-baseline justify-between">
                 <h2 className="text-[11px] font-bold uppercase tracking-wider text-(--color-text-muted)">
-                  Timeline kilometer
+                  {t("vehicleDetail.timelineTitle")}
                 </h2>
                 {historyLogs[0] ? (
                   <span className="text-[11px] font-semibold text-(--color-text-muted)">
-                    Update terakhir · {formatRelative(historyLogs[0].created_at)}
+                    {t("vehicleDetail.lastUpdateAt", { when: formatRelativeLocalized(historyLogs[0].created_at, { t, formatDate, locale }) })}
                   </span>
                 ) : null}
               </div>
@@ -383,10 +397,11 @@ export default function VehicleDetailPage() {
                 <HistorySentinel
                   onIntersect={() => void loadMoreHistory()}
                   loading={loadingMoreHistory}
+                  loadingLabel={t("vehicleDetail.loadingMore")}
                 />
               ) : historyLogs.length > HISTORY_PAGE_SIZE ? (
                 <p className="mt-3 text-center text-[10px] font-semibold uppercase tracking-wider text-(--color-text-muted)">
-                  Akhir riwayat
+                  {t("vehicleDetail.endOfHistory")}
                 </p>
               ) : null}
             </section>
@@ -394,7 +409,7 @@ export default function VehicleDetailPage() {
             {/* Catatan — hanya jika ada */}
             {notes ? (
               <section className="mt-4 rounded-xl bg-gray-50 p-4 dark:bg-zinc-900/60">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)">Catatan</p>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)">{t("vehicleDetail.notesTitle")}</p>
                 <p className="mt-1 text-sm leading-relaxed text-(--color-text)">{notes}</p>
               </section>
             ) : null}
@@ -403,7 +418,7 @@ export default function VehicleDetailPage() {
             {reminderCount > 0 && (
               <section className="mt-6">
                 <h2 className="mb-3 text-[11px] font-bold uppercase tracking-wider text-(--color-text-muted)">
-                  Pengingat servis
+                  {t("vehicleDetail.serviceReminderTitle")}
                 </h2>
                 <ul className="space-y-2.5">
                   {detail.reminders.map((r) => {
@@ -417,19 +432,21 @@ export default function VehicleDetailPage() {
                       >
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-sm font-semibold capitalize text-(--color-text)">
-                            {r.service_type === "light" ? "Servis ringan" : "Servis besar"}
+                            {r.service_type === "light" ? t("vehicleDetail.serviceLight") : t("vehicleDetail.serviceHeavy")}
                           </span>
                           {isOverdue ? (
                             <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-[11px] font-bold text-red-600 dark:bg-red-900/40 dark:text-red-400">
-                              Overdue
+                              {t("vehicleDetail.overdueBadge")}
                             </span>
                           ) : null}
                         </div>
                         <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-(--color-text-secondary)">
-                          {r.next_due_km > 0 && <span>Due at {r.next_due_km.toLocaleString("id-ID")} km</span>}
+                          {r.next_due_km > 0 && <span>{t("vehicleDetail.dueAtKm", { km: formatNumber(r.next_due_km) })}</span>}
                           {r.next_due_date && (
                             <span>
-                              Due {new Date(r.next_due_date).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}
+                              {t("vehicleDetail.dueOn", {
+                                date: formatDate(r.next_due_date, { day: "numeric", month: "short", year: "numeric" }),
+                              })}
                             </span>
                           )}
                         </div>
@@ -454,19 +471,19 @@ export default function VehicleDetailPage() {
         vehicleId={(id as string) ?? ""}
         minMileage={minRecordedMileage}
         onSaved={refreshVehicleData}
-        title="Perbarui kilometer"
+        title={t("vehicleDetail.updateMileageTitle")}
       />
 
       <ConfirmDialog
         open={!!pendingDeleteMileage}
-        title="Hapus catatan KM?"
+        title={t("vehicleDetail.deleteMileageTitle")}
         message={
           pendingDeleteMileage
-            ? `Catatan ${pendingDeleteMileage.mileage.toLocaleString("id-ID")} KM akan dihapus permanen. Jika ini catatan terbaru, KM kendaraan akan turun ke catatan sebelumnya.`
+            ? t("vehicleDetail.deleteMileageMessage", { km: formatNumber(pendingDeleteMileage.mileage) })
             : ""
         }
-        confirmLabel={deletingMileage ? "Menghapus…" : "Hapus"}
-        cancelLabel="Batal"
+        confirmLabel={deletingMileage ? t("vehicleDetail.deletingMileage") : t("vehicleDetail.deleteMileageConfirm")}
+        cancelLabel={t("vehicleDetail.deleteMileageCancel")}
         variant="danger"
         onConfirm={() => void confirmDeleteMileage()}
         onCancel={cancelDeleteMileage}
@@ -493,9 +510,11 @@ export default function VehicleDetailPage() {
 function HistorySentinel({
   onIntersect,
   loading,
+  loadingLabel,
 }: {
   onIntersect: () => void;
   loading: boolean;
+  loadingLabel: string;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
 
@@ -537,26 +556,38 @@ function HistorySentinel({
             aria-hidden
             className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-(--color-border) border-t-(--color-primary)"
           />
-          Memuat lebih banyak…
+          {loadingLabel}
         </span>
       ) : null}
     </div>
   );
 }
 
-function formatRelative(iso: string): string {
+/**
+ * Formatter waktu relatif untuk timeline header. Kita ambil `t` &
+ * `formatDate` sebagai argumen (bukan bikin closure di dalam) supaya
+ * fungsi ini tetap pure & aman dipakai di luar React tree bila perlu.
+ */
+function formatRelativeLocalized(
+  iso: string,
+  ctx: {
+    t: (k: Parameters<ReturnType<typeof useTranslation>["t"]>[0], v?: Record<string, string | number>) => string;
+    formatDate: ReturnType<typeof useTranslation>["formatDate"];
+    locale: string;
+  },
+): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
   const now = new Date();
   const diffMs = now.getTime() - d.getTime();
   const mins = Math.floor(diffMs / 60_000);
-  if (mins < 1) return "baru saja";
-  if (mins < 60) return `${mins}m lalu`;
+  if (mins < 1) return ctx.t("vehicleDetail.relJustNow");
+  if (mins < 60) return ctx.t("vehicleDetail.relMinutes", { n: mins });
   const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}j lalu`;
+  if (hours < 24) return ctx.t("vehicleDetail.relHours", { n: hours });
   const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}h lalu`;
-  return d.toLocaleDateString("id-ID", { day: "numeric", month: "short" });
+  if (days < 7) return ctx.t("vehicleDetail.relDays", { n: days });
+  return ctx.formatDate(d, { day: "numeric", month: "short" });
 }
 
 function MileageFromQuery({

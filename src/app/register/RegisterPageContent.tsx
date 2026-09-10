@@ -9,35 +9,11 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
+import { useTranslation } from "@/lib/i18n";
 
 function FieldError({ message }: { message?: string }) {
   if (!message) return null;
   return <p className="mb-1 text-xs font-medium text-red-400">{message}</p>;
-}
-
-function validateEmail(email: string): string | undefined {
-  if (!email.trim()) return "Email is required";
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return "Please enter a valid email address";
-}
-
-function validatePhone(phone: string): string | undefined {
-  if (!phone) return undefined;
-  if (!/^\d+$/.test(phone)) return "Phone number must contain digits only";
-  if (phone.length < 9 || phone.length > 13) return "Phone number must be 9–13 digits";
-}
-
-function validatePassword(password: string): string | undefined {
-  if (!password) return "Password is required";
-  if (password.length < 6) return "Password must be at least 6 characters";
-}
-
-function validateConfirm(password: string, confirm: string): string | undefined {
-  if (!confirm) return "Please confirm your password";
-  if (password !== confirm) return "Passwords do not match";
-}
-
-function validateName(name: string): string | undefined {
-  if (!name.trim()) return "Full name is required";
 }
 
 export default function RegisterPageContent() {
@@ -51,6 +27,30 @@ export default function RegisterPageContent() {
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const { register } = useAuth();
   const router = useRouter();
+  const { t } = useTranslation();
+
+  // Validasi diletakkan di dalam komponen agar bisa memakai `t` — biaya
+  // sebenarnya rendah karena setiap validator hanya dieksekusi saat blur/submit.
+  const validateName = (v: string): string | undefined => {
+    if (!v.trim()) return t("register.errorName");
+  };
+  const validateEmail = (v: string): string | undefined => {
+    if (!v.trim()) return t("register.errorEmailRequired");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return t("register.errorEmailInvalid");
+  };
+  const validatePhone = (v: string): string | undefined => {
+    if (!v) return undefined;
+    if (!/^\d+$/.test(v)) return t("register.errorPhoneDigits");
+    if (v.length < 9 || v.length > 13) return t("register.errorPhoneLength");
+  };
+  const validatePassword = (v: string): string | undefined => {
+    if (!v) return t("register.errorPassword");
+    if (v.length < 6) return t("register.errorPasswordShort");
+  };
+  const validateConfirm = (pw: string, cf: string): string | undefined => {
+    if (!cf) return t("register.errorConfirm");
+    if (pw !== cf) return t("register.errorMismatch");
+  };
 
   const handleBlur = (field: string) => {
     setTouched((prev) => ({ ...prev, [field]: true }));
@@ -95,17 +95,14 @@ export default function RegisterPageContent() {
         password
       );
       if (result.needsEmailConfirmation) {
-        toast.success(
-          "Account created. Open the link in the email we sent you to confirm, then sign in.",
-          { duration: 8000 },
-        );
+        toast.success(t("register.needsEmailConfirm"), { duration: 8000 });
         router.push("/login");
       } else {
-        toast.success("Account created!");
+        toast.success(t("register.successSimple"));
         router.push("/dashboard");
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Registration failed");
+      toast.error(err instanceof Error ? err.message : t("register.failed"));
     } finally {
       setLoading(false);
     }
@@ -125,10 +122,10 @@ export default function RegisterPageContent() {
         <div className="mb-10 text-center">
           <div className="mb-4 text-5xl">🏍️</div>
           <h1 className="text-2xl font-bold uppercase tracking-wide">
-            Create Account
+            {t("register.title")}
           </h1>
           <p className="mt-2 text-sm text-(--color-text-secondary)">
-            Start tracking your vehicle maintenance
+            {t("register.subtitle")}
           </p>
         </div>
 
@@ -141,7 +138,7 @@ export default function RegisterPageContent() {
               onChange={(e) => { setName(e.target.value); if (touched.name) setErrors((p) => ({ ...p, name: validateName(e.target.value) })); }}
               onBlur={() => handleBlur("name")}
               className={`${inputClass} ${borderFor("name")}`}
-              placeholder="Your full name *"
+              placeholder={t("register.namePlaceholderShort")}
             />
           </div>
 
@@ -153,7 +150,7 @@ export default function RegisterPageContent() {
               onChange={(e) => { setEmail(e.target.value); if (touched.email) setErrors((p) => ({ ...p, email: validateEmail(e.target.value) })); }}
               onBlur={() => handleBlur("email")}
               className={`${inputClass} ${borderFor("email")}`}
-              placeholder="Email address *"
+              placeholder={t("register.emailPlaceholderShort")}
             />
           </div>
 
@@ -173,7 +170,7 @@ export default function RegisterPageContent() {
                 }}
                 onBlur={() => handleBlur("phone")}
                 className="w-full border-none bg-transparent px-3 py-3.5 text-sm outline-none placeholder:text-(--color-text-muted)"
-                placeholder="8123456789 (optional)"
+                placeholder={t("register.phonePlaceholderShort")}
                 maxLength={13}
                 inputMode="numeric"
               />
@@ -188,7 +185,7 @@ export default function RegisterPageContent() {
               onChange={(e) => { setPassword(e.target.value); if (touched.password) setErrors((p) => ({ ...p, password: validatePassword(e.target.value) })); }}
               onBlur={() => handleBlur("password")}
               className={`${inputClass} ${borderFor("password")}`}
-              placeholder="Password (min 6 chars) *"
+              placeholder={t("register.passwordPlaceholderShort")}
             />
           </div>
 
@@ -200,7 +197,7 @@ export default function RegisterPageContent() {
               onChange={(e) => { setConfirmPassword(e.target.value); if (touched.confirmPassword) setErrors((p) => ({ ...p, confirmPassword: validateConfirm(password, e.target.value) })); }}
               onBlur={() => handleBlur("confirmPassword")}
               className={`${inputClass} ${borderFor("confirmPassword")}`}
-              placeholder="Confirm password *"
+              placeholder={t("register.confirmPasswordPlaceholderShort")}
             />
           </div>
 
@@ -209,15 +206,15 @@ export default function RegisterPageContent() {
             disabled={loading}
             className="w-full rounded-2xl bg-(--color-primary) px-4 py-4 text-base font-bold text-white shadow-lg shadow-(--color-primary)/30 transition-all hover:brightness-110 active:scale-[0.98] active:brightness-90 disabled:opacity-50"
           >
-            {loading ? "Creating account..." : "Create Account"}
+            {loading ? t("register.submittingLabel") : t("register.submitLabel")}
           </button>
         </form>
       </div>
 
       <p className="text-center text-xs text-(--color-text-muted)">
-        Already have an account?{" "}
+        {t("register.hasAccount")}{" "}
         <Link href="/login" className="font-semibold text-(--color-primary)">
-          Sign in
+          {t("register.signIn")}
         </Link>
       </p>
     </div>

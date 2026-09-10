@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import OdometerScanButton from "@/components/OdometerScanButton";
 import { insertMileage } from "@/lib/supabase";
 import { toast } from "sonner";
+import { useTranslation } from "@/lib/i18n";
 
 export type AddMileageModalProps = {
   open: boolean;
@@ -23,8 +24,12 @@ export default function AddMileageModal({
   vehicleId,
   minMileage,
   onSaved,
-  title = "Perbarui kilometer",
+  title,
 }: AddMileageModalProps) {
+  const { t, formatNumber } = useTranslation();
+  // Default title berasal dari i18n; caller boleh tetap override
+  // (mis. Vehicle Detail memakai copy sendiri).
+  const resolvedTitle = title ?? t("addMileage.title");
   const [value, setValue] = useState("");
   const [saving, setSaving] = useState(false);
   const [fieldError, setFieldError] = useState(false);
@@ -90,20 +95,20 @@ export default function AddMileageModal({
       triggerFieldError();
       toast.error(
         minMileage > 0
-          ? `KM baru harus lebih besar dari ${minMileage.toLocaleString()}`
-          : "Masukkan KM lebih besar dari 0",
+          ? t("addMileage.mustBeGreater", { km: formatNumber(minMileage) })
+          : t("addMileage.mustBeGreaterThanZero"),
       );
       return;
     }
     setSaving(true);
     try {
       await insertMileage(vehicleId, n);
-      toast.success("KM tersimpan");
+      toast.success(t("addMileage.savedToast"));
       setFieldError(false);
       await Promise.resolve(onSaved());
       onClose();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Gagal menyimpan KM");
+      toast.error(err instanceof Error ? err.message : t("addMileage.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -128,7 +133,7 @@ export default function AddMileageModal({
       <button
         type="button"
         className="absolute inset-0 bg-black/40 transition-opacity duration-150 hover:bg-black/45"
-        aria-label="Tutup"
+        aria-label={t("addMileage.close")}
         disabled={saving}
         onClick={() => {
           if (!saving) onClose();
@@ -147,15 +152,15 @@ export default function AddMileageModal({
           <div
             className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-t-3xl bg-(--color-bg)/92 backdrop-blur-[2px] sm:rounded-3xl dark:bg-black/55"
             aria-live="polite"
-            aria-label="Menyimpan"
+            aria-label={t("addMileage.saving")}
           >
             <div
               className="h-10 w-10 animate-spin rounded-full border-2 border-(--color-border) border-t-(--color-primary)"
               aria-hidden
             />
-            <p className="text-sm font-semibold text-(--color-text)">Menyimpan…</p>
+            <p className="text-sm font-semibold text-(--color-text)">{t("addMileage.saving")}</p>
             <p className="max-w-[220px] text-center text-xs text-(--color-text-secondary)">
-              Mohon tunggu, sedang menyimpan ke server.
+              {t("addMileage.savingHint")}
             </p>
           </div>
         )}
@@ -167,13 +172,13 @@ export default function AddMileageModal({
         >
           <div className="flex items-start justify-between gap-3">
             <h2 id="add-mileage-title" className="min-w-0 flex-1 text-lg font-bold leading-tight">
-              {title}
+              {resolvedTitle}
             </h2>
             <button
               type="button"
               onClick={onClose}
               disabled={saving}
-              aria-label="Tutup"
+              aria-label={t("addMileage.close")}
               className="-mr-1 -mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-(--color-text-muted) transition-all duration-150 hover:bg-(--color-surface) hover:text-(--color-text) active:scale-95 disabled:opacity-40"
             >
               <svg
@@ -192,15 +197,9 @@ export default function AddMileageModal({
             </button>
           </div>
           <p className="text-sm text-(--color-text-secondary)">
-            {minMileage > 0 ? (
-              <>
-                KM baru harus{" "}
-                <span className="font-semibold text-(--color-text)">lebih besar</span> dari{" "}
-                <span className="font-semibold text-(--color-text)">{minMileage.toLocaleString()} km</span>{" "}
-              </>
-            ) : (
-              <>Masukkan odometer saat ini (harus lebih besar dari 0).</>
-            )}
+            {minMileage > 0
+              ? t("addMileage.hintGreaterThan", { km: formatNumber(minMileage) })
+              : t("addMileage.hintEmpty")}
           </p>
           <input
             type="text"
@@ -221,7 +220,7 @@ export default function AddMileageModal({
                 ? "border-red-500 bg-red-50/50 ring-2 ring-red-500/30 focus:border-red-500 focus:ring-red-500/25 dark:border-red-500/80 dark:bg-red-950/20 dark:ring-red-500/35"
                 : "border-(--color-border) focus:border-(--color-primary) focus:ring-(--color-primary)/20"
               } ${shaking ? "input-err-shake" : ""}`}
-            placeholder="kilometer"
+            placeholder={t("addMileage.inputPlaceholder")}
             autoFocus
           />
           <OdometerScanButton variant="full" disabled={saving} onDetected={setKmDigits} />
@@ -230,7 +229,7 @@ export default function AddMileageModal({
             disabled={saving}
             className="w-full rounded-2xl bg-(--color-primary) py-3.5 text-sm font-bold text-white shadow-md shadow-(--color-primary)/30 transition-all duration-150 hover:brightness-110 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100"
           >
-            {saving ? "Menyimpan…" : "Simpan"}
+            {saving ? t("addMileage.submitting") : t("addMileage.submit")}
           </button>
         </form>
       </div>
