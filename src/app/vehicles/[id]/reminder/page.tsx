@@ -11,6 +11,7 @@ import {
   fetchServiceRecordsForVehicle,
   fetchVehicleDetail,
   getLatestMileageKm,
+  ReminderValidationError,
   updateReminderForVehicle,
 } from "@/lib/supabase";
 import {
@@ -32,12 +33,13 @@ import {
   WEEKDAYS,
   buildScheduleSpec,
   computeNextOccurrence,
-  formatScheduleSummary,
   type ScheduleKind,
   type ScheduleSpec,
 } from "@/lib/reminder-schedule";
+import { useFormatScheduleSummary } from "@/lib/reminder-schedule-i18n";
 import { evaluateReminder } from "@/lib/notification-engine";
 import type { MotorcycleCategory, Reminder, ServiceRecord } from "@/lib/types";
+import { useTranslation, type TranslationKey } from "@/lib/i18n";
 
 /* ──────────────────────────────────────────────────────────────────
  * Status / formatting helpers
@@ -59,42 +61,20 @@ function computeStatus(r: Reminder, latestKm: number): ReminderStatus {
   return evalRes.status;
 }
 
-const STATUS_TONE: Record<
-  ReminderStatus,
-  { label: string; chip: string; dot: string }
-> = {
+const STATUS_TONE: Record<ReminderStatus, { chip: string; dot: string }> = {
   aman: {
-    label: "Aman",
     chip: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
     dot: "bg-emerald-500",
   },
   mendekati: {
-    label: "Mendekati",
     chip: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
     dot: "bg-amber-500",
   },
   telat: {
-    label: "Telat",
     chip: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
     dot: "bg-red-500",
   },
 };
-
-function formatRemainingKm(r: Reminder, latestKm: number): string | null {
-  if (r.km_interval <= 0 || r.next_due_km <= 0) return null;
-  const diff = r.next_due_km - latestKm;
-  if (diff < 0) return `Lewat ${Math.abs(diff).toLocaleString("id-ID")} km`;
-  return `Sisa ${diff.toLocaleString("id-ID")} km lagi`;
-}
-
-function formatRemainingFromDate(d: Date | null): string | null {
-  if (!d) return null;
-  const ms = d.getTime() - Date.now();
-  const days = Math.ceil(ms / (1000 * 60 * 60 * 24));
-  if (days < 0) return `Lewat ${Math.abs(days)} hari`;
-  if (days === 0) return "Hari ini";
-  return `Sisa ${days} hari lagi`;
-}
 
 /* ──────────────────────────────────────────────────────────────────
  * Date helpers (form)
@@ -149,6 +129,34 @@ export default function ReminderPage() {
   const { id } = useParams<{ id: string }>();
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
+  const { t, formatNumber } = useTranslation();
+  // i18n-aware wrapper for schedule summary; keeps hook rules happy while
+  // letting summary read "Pada 5 Juni 2026" / "On June 5, 2026" per locale.
+  const formatSchedule = useFormatScheduleSummary();
+
+  /**
+   * Translate service errors ke bahasa user. Sengaja TIDAK render
+   * `err.message` mentah karena itu mungkin string English/ID hard-coded
+   * dari layer bawah — bakal janggal kalau user lagi di locale sebaliknya.
+   * Untuk numeric params (mis. `target_km_too_low`) pre-format dulu via
+   * `formatNumber` supaya thousand-separator ikut locale ("50.000" vs
+   * "50,000"). Fallback dipakai bila error bukan `ReminderValidationError`.
+   */
+  const describeReminderError = useCallback(
+    (err: unknown, fallbackMsg: string): string => {
+      if (err instanceof ReminderValidationError) {
+        const key = `reminderError.${err.code}` as TranslationKey;
+        const params: Record<string, string | number> = { ...err.params };
+        for (const k of Object.keys(params)) {
+          const v = params[k];
+          if (typeof v === "number") params[k] = formatNumber(v);
+        }
+        return t(key, params);
+      }
+      return fallbackMsg;
+    },
+    [t, formatNumber],
+  );
 
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [latestKm, setLatestKm] = useState<number>(0);
@@ -224,11 +232,11 @@ export default function ReminderPage() {
       }
       if (recordsRes.status === "fulfilled") setRecords(recordsRes.value);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Gagal memuat reminder");
+      toast.error(describeReminderError(err, t("reminderPage.loadFailed")));
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, t, describeReminderError]);
 
   useEffect(() => {
     if (!user || !id) return;
@@ -292,21 +300,20 @@ export default function ReminderPage() {
   const summaryLines = useMemo<string[]>(() => {
     const lines: string[] = [];
     if (useKm && kmTargetValid) {
-      const tail =
+      lines.push(
         kmAlertMode === "daily"
-          ? " — ingatkan tiap hari setelahnya"
-          : " — ingatkan sekali";
-      lines.push(`Diingatkan saat mencapai ${targetKmNum.toLocaleString("id-ID")} km${tail}`);
+          ? t("reminderPage.summaryAtKmDaily", { km: formatNumber(targetKmNum) })
+          : t("reminderPage.summaryAtKmOnce", { km: formatNumber(targetKmNum) }),
+      );
     }
     if (useTime && schedule && scheduleValid) {
-      const summary = formatScheduleSummary(schedule);
-      // Once already starts with "Pada"; repeat starts with "setiap".
-      const prefix = lines.length > 0 ? "+ " : "";
+      const summary = formatSchedule(schedule);
+      const prefix = lines.length > 0 ? t("reminderPage.summaryPrefix") : "";
       lines.push(`${prefix}${summary}`);
     }
-    if (lines.length === 0) lines.push("Pilih KM, jadwal, atau keduanya");
+    if (lines.length === 0) lines.push(t("reminderPage.summaryPickOne"));
     return lines;
-  }, [useKm, targetKmNum, kmTargetValid, kmAlertMode, useTime, schedule, scheduleValid]);
+  }, [useKm, targetKmNum, kmTargetValid, kmAlertMode, useTime, schedule, scheduleValid, t, formatNumber, formatSchedule]);
 
   /* Default schedule when toggle goes ON (per preset / per kind). */
   const defaultScheduleForKind = useCallback(
@@ -558,11 +565,11 @@ export default function ReminderPage() {
     try {
       if (isEdit && editingId) {
         const updated = await updateReminderForVehicle(editingId, id as string, payload);
-        toast.success(`Reminder "${preset.label}" diperbarui`);
+        toast.success(t("reminderPage.updatedToast", { name: t(preset.labelKey) }));
         setReminders((prev) => prev.map((r) => (r.id === editingId ? updated : r)));
       } else {
         const created = await createReminderForVehicle(id as string, payload);
-        toast.success(`Reminder "${preset.label}" aktif`);
+        toast.success(t("reminderPage.createdToast", { name: t(preset.labelKey) }));
         setReminders((prev) => [created, ...prev]);
       }
       void loadAll();
@@ -570,11 +577,10 @@ export default function ReminderPage() {
       setEditingId(null);
     } catch (err) {
       toast.error(
-        err instanceof Error
-          ? err.message
-          : isEdit
-            ? "Gagal memperbarui reminder"
-            : "Gagal membuat reminder",
+        describeReminderError(
+          err,
+          isEdit ? t("reminderPage.updateFailed") : t("reminderPage.createFailed"),
+        ),
       );
     } finally {
       setSubmitting(false);
@@ -590,6 +596,8 @@ export default function ReminderPage() {
     schedule,
     preset,
     loadAll,
+    t,
+    describeReminderError,
   ]);
 
   const requestDelete = useCallback((r: Reminder) => setPendingDelete(r), []);
@@ -604,15 +612,15 @@ export default function ReminderPage() {
     setReminders((prev) => prev.filter((x) => x.id !== target.id));
     try {
       await deleteReminderForVehicle(target.id);
-      toast.success("Reminder dihapus");
+      toast.success(t("reminderPage.deletedToast"));
     } catch (err) {
       setReminders(previous);
-      toast.error(err instanceof Error ? err.message : "Gagal menghapus reminder");
+      toast.error(describeReminderError(err, t("reminderPage.deleteFailed")));
     } finally {
       setDeleting(false);
       setPendingDelete(null);
     }
-  }, [pendingDelete, deleting, reminders]);
+  }, [pendingDelete, deleting, reminders, t, describeReminderError]);
 
   if (authLoading || !user) return null;
 
@@ -627,15 +635,15 @@ export default function ReminderPage() {
           onClick={() => router.push(`/vehicles/${id}`)}
           className="mb-4 self-start text-sm font-semibold text-(--color-text-secondary) transition-colors hover:text-(--color-text)"
         >
-          ← Kembali ke kendaraan
+          {t("reminderPage.backToVehicle")}
         </button>
 
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
             <p className="text-xs font-bold uppercase tracking-wider text-(--color-text-muted)">
-              Reminder
+              {t("reminderPage.eyebrow")}
             </p>
-            <h1 className="mt-0.5 text-2xl font-bold tracking-tight">Servis & cek rutin</h1>
+            <h1 className="mt-0.5 text-2xl font-bold tracking-tight">{t("reminderPage.title")}</h1>
           </div>
           {showHeaderAddBtn ? (
             <button
@@ -643,14 +651,14 @@ export default function ReminderPage() {
               onClick={openForm}
               className="shrink-0 rounded-2xl bg-(--color-primary) px-4 py-2.5 text-sm font-bold text-white shadow-md shadow-(--color-primary)/30 transition-all hover:brightness-110 active:scale-[0.98]"
             >
-              + Tambah
+              {t("reminderPage.addBtn")}
             </button>
           ) : null}
         </div>
 
         {latestKm > 0 ? (
           <p className="mb-5 inline-flex w-fit items-center gap-1.5 rounded-full bg-(--color-surface-alt) px-3 py-1 text-xs font-medium text-(--color-text-secondary)">
-            <span aria-hidden>📍</span> Saat ini {latestKm.toLocaleString("id-ID")} km
+            <span aria-hidden>📍</span> {t("reminderPage.currentKm", { km: formatNumber(latestKm) })}
           </p>
         ) : null}
 
@@ -663,7 +671,7 @@ export default function ReminderPage() {
         ) : hasReminders ? (
           <>
             <p className="mb-3 text-[11px] text-(--color-text-muted)">
-              Tap untuk edit, geser ke kiri untuk hapus.
+              {t("reminderPage.listHint")}
             </p>
             <div className="flex flex-col gap-3" role="list">
               {reminders.map((r) => (
@@ -705,7 +713,7 @@ export default function ReminderPage() {
           <button
             type="button"
             className="absolute inset-0 bg-black/40 transition-opacity duration-150 hover:bg-black/45"
-            aria-label="Tutup"
+            aria-label={t("common.close")}
             onClick={closeForm}
           />
           <div className="relative z-10 flex max-h-[85dvh] w-full max-w-md flex-col rounded-t-2xl bg-(--color-bg) shadow-2xl sm:mx-4 sm:rounded-2xl">
@@ -715,19 +723,17 @@ export default function ReminderPage() {
                   id="reminder-form-title"
                   className="text-lg font-extrabold text-(--color-text)"
                 >
-                  {editingId ? "Edit reminder" : "Tambah reminder"}
+                  {editingId ? t("reminderPage.formEditTitle") : t("reminderPage.formAddTitle")}
                 </h2>
                 <p className="mt-0.5 text-xs text-(--color-text-secondary)">
-                  {editingId
-                    ? "Ubah jadwal atau target KM reminder ini."
-                    : "Pilih jenis reminder, lalu sesuaikan jadwal & target."}
+                  {editingId ? t("reminderPage.formEditSubtitle") : t("reminderPage.formAddSubtitle")}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={closeForm}
                 className="rounded-lg p-2 text-(--color-text-muted) transition-colors hover:bg-(--color-surface) hover:text-(--color-text)"
-                aria-label="Tutup"
+                aria-label={t("common.close")}
               >
                 <CloseIcon className="h-5 w-5" />
               </button>
@@ -737,7 +743,7 @@ export default function ReminderPage() {
               {/* Preset chips */}
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)">
-                  Jenis reminder
+                  {t("reminderPage.presetLabel")}
                 </p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {REMINDER_PRESETS.map((p) => {
@@ -751,7 +757,7 @@ export default function ReminderPage() {
                         aria-pressed={active}
                       >
                         <span aria-hidden>{p.icon}</span>
-                        {p.label}
+                        {t(p.labelKey)}
                       </button>
                     );
                   })}
@@ -800,7 +806,7 @@ export default function ReminderPage() {
               {/* Summary preview */}
               <div className="rounded-xl border border-(--color-border)/40 bg-(--color-surface-alt)/40 p-3">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)">
-                  Ringkasan
+                  {t("reminderPage.summary")}
                 </p>
                 <ul className="mt-1 space-y-0.5">
                   {summaryLines.map((line, i) => (
@@ -825,11 +831,11 @@ export default function ReminderPage() {
               >
                 {submitting
                   ? editingId
-                    ? "Menyimpan…"
-                    : "Mengaktifkan…"
+                    ? t("reminderPage.saving")
+                    : t("reminderPage.activating")
                   : editingId
-                    ? "Simpan Perubahan"
-                    : "Aktifkan Reminder"}
+                    ? t("reminderPage.saveChanges")
+                    : t("reminderPage.activateReminder")}
               </button>
             </div>
           </div>
@@ -838,17 +844,22 @@ export default function ReminderPage() {
 
       <ConfirmDialog
         open={!!pendingDelete}
-        title="Hapus reminder?"
+        title={t("reminderPage.deleteTitle")}
         message={
           pendingDelete
-            ? `Reminder "${
-                getReminderPreset(pendingDelete.preset_slug)?.label ??
-                (pendingDelete.service_type === "heavy" ? "Servis berat" : "Servis ringan")
-              }" akan dihapus permanen.`
+            ? (() => {
+                const preset = getReminderPreset(pendingDelete.preset_slug);
+                const name = preset
+                  ? t(preset.labelKey)
+                  : pendingDelete.service_type === "heavy"
+                    ? t("reminderPage.serviceHeavy")
+                    : t("reminderPage.serviceLight");
+                return t("reminderPage.deleteMessage", { name });
+              })()
             : ""
         }
-        confirmLabel={deleting ? "Menghapus…" : "Hapus"}
-        cancelLabel="Batal"
+        confirmLabel={deleting ? t("reminderPage.deleting") : t("common.delete")}
+        cancelLabel={t("common.cancel")}
         variant="danger"
         onConfirm={() => void confirmDelete()}
         onCancel={() => {
@@ -875,6 +886,8 @@ function ReminderRow({
    *  swipe-vs-tap disambiguation upstream, so tap intent here is genuine. */
   onEdit: () => void;
 }) {
+  const { t, formatNumber } = useTranslation();
+  const formatSchedule = useFormatScheduleSummary();
   // Live re-derivation of the schedule date for repeat reminders so the row
   // shows "Sisa 5 hari" today rather than a stale snapshot from creation time.
   const scheduleSpec = useMemo(() => buildScheduleSpec(r), [r]);
@@ -882,24 +895,41 @@ function ReminderRow({
     () => (scheduleSpec ? computeNextOccurrence(scheduleSpec) : null),
     [scheduleSpec],
   );
-  const scheduleSummary = scheduleSpec ? formatScheduleSummary(scheduleSpec) : null;
+  const scheduleSummary = scheduleSpec ? formatSchedule(scheduleSpec) : null;
 
   const status = computeStatus(r, latestKm);
   const tone = STATUS_TONE[status];
+  const statusLabel = {
+    aman: t("reminderPage.statusSafe"),
+    mendekati: t("reminderPage.statusApproaching"),
+    telat: t("reminderPage.statusOverdue"),
+  }[status];
   const p = getReminderPreset(r.preset_slug);
-  const remainingKm = formatRemainingKm(r, latestKm);
-  const remainingTime = formatRemainingFromDate(
-    scheduleNext ?? (r.next_due_date ? new Date(r.next_due_date) : null),
-  );
-  const fallbackLabel = r.service_type === "heavy" ? "Servis berat" : "Servis ringan";
-  const label = p?.label ?? fallbackLabel;
+  const remainingKm = (() => {
+    if (r.km_interval <= 0 || r.next_due_km <= 0) return null;
+    const diff = r.next_due_km - latestKm;
+    if (diff < 0) return t("reminderPage.kmOverdue", { n: formatNumber(Math.abs(diff)) });
+    return t("reminderPage.kmRemaining", { n: formatNumber(diff) });
+  })();
+  const remainingTime = (() => {
+    const d = scheduleNext ?? (r.next_due_date ? new Date(r.next_due_date) : null);
+    if (!d) return null;
+    const ms = d.getTime() - Date.now();
+    const days = Math.ceil(ms / (1000 * 60 * 60 * 24));
+    if (days < 0) return t("reminderPage.daysOverdue", { n: formatNumber(Math.abs(days)) });
+    if (days === 0) return t("reminderPage.today");
+    return t("reminderPage.daysRemaining", { n: formatNumber(days) });
+  })();
+  const fallbackLabel =
+    r.service_type === "heavy" ? t("reminderPage.serviceHeavy") : t("reminderPage.serviceLight");
+  const label = p ? t(p.labelKey) : fallbackLabel;
 
   return (
     <button
       type="button"
       role="listitem"
       onClick={onEdit}
-      aria-label={`Edit reminder ${label}`}
+      aria-label={t("reminderPage.editReminderAria", { name: label })}
       className="w-full rounded-2xl border border-(--color-border)/60 bg-(--color-surface) p-4 text-left shadow-sm transition-colors hover:border-(--color-border) active:scale-[0.99]"
     >
       <div className="flex items-start gap-3">
@@ -916,13 +946,13 @@ function ReminderRow({
               className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${tone.chip}`}
             >
               <span className={`h-1.5 w-1.5 rounded-full ${tone.dot}`} />
-              {tone.label}
+              {statusLabel}
             </span>
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-(--color-text-secondary)">
             {remainingKm ? <span>{remainingKm}</span> : null}
             {remainingTime ? <span>{remainingTime}</span> : null}
-            {!remainingKm && !remainingTime ? <span>Tidak ada interval aktif</span> : null}
+            {!remainingKm && !remainingTime ? <span>{t("reminderPage.noActiveInterval")}</span> : null}
           </div>
           {/* Sub-line: schedule summary + km alert mode (only show when relevant). */}
           {scheduleSummary || (r.km_interval > 0 && r.km_alert_mode === "daily") ? (
@@ -930,7 +960,7 @@ function ReminderRow({
               {[
                 scheduleSummary,
                 r.km_interval > 0 && r.km_alert_mode === "daily"
-                  ? "Pengingat KM tiap hari"
+                  ? t("reminderPage.kmDailyAlert")
                   : null,
               ]
                 .filter(Boolean)
@@ -974,6 +1004,7 @@ function KmField({
   onModeChange: (next: "auto" | "manual") => void;
   suggestion: KmSuggestion;
 }) {
+  const { t, formatNumber } = useTranslation();
   // Live validation. Shown inline only when user has entered something —
   // empty input shouldn't shout "invalid" before they finish typing.
   const parsed = parseInt(value, 10);
@@ -984,7 +1015,7 @@ function KmField({
       ? String(suggestedTarget)
       : latestKm > 0
         ? String(latestKm + 1)
-        : "Contoh: 15000";
+        : t("reminderPage.kmPlaceholder");
 
   // Auto mode is only offered when the suggestion engine has something
   // meaningful for this preset. Otherwise the segmented control is hidden
@@ -1003,7 +1034,7 @@ function KmField({
       }`}
     >
       <ToggleHeader
-        label="Gunakan KM"
+        label={t("reminderPage.useKm")}
         enabled={enabled}
         onChange={onEnabledChange}
       />
@@ -1015,13 +1046,13 @@ function KmField({
         <ModeSegment
           mode={mode}
           onChange={onModeChange}
-          autoLabel="Otomatis"
-          manualLabel="Manual"
+          autoLabel={t("reminderPage.auto")}
+          manualLabel={t("reminderPage.manual")}
         />
       ) : null}
 
       <label className="mt-2 flex items-center gap-2 text-xs text-(--color-text-muted)">
-        <span className="shrink-0">Saat mencapai</span>
+        <span className="shrink-0">{t("reminderPage.whenReaching")}</span>
         <input
           type="text"
           inputMode="numeric"
@@ -1030,7 +1061,7 @@ function KmField({
           placeholder={placeholder}
           disabled={!enabled || isAuto}
           readOnly={isAuto}
-          aria-label="Target KM reminder"
+          aria-label={t("reminderPage.targetKmAria")}
           aria-invalid={tooLow || undefined}
           className={`min-w-0 flex-1 rounded-lg border px-2.5 py-1.5 text-sm font-semibold tabular-nums text-(--color-text) outline-none transition-colors ${
             !enabled
@@ -1051,17 +1082,29 @@ function KmField({
         isAuto ? (
           <p className="mt-1 flex items-start gap-1 text-[11px] text-(--color-text-muted)">
             <SystemDot source={suggestion.source} />
-            <span>{suggestion.note}</span>
+            <span>
+              {suggestion.noteI18n.key
+                ? t(suggestion.noteI18n.key, {
+                    ...suggestion.noteI18n.vars,
+                    // Kalau ada partKey, resolve dulu ke locale aktif; ini
+                    // memastikan template `{part}` tampil "Chain & sprocket"
+                    // di EN dan "Rantai & gear" di ID (bukan sebaliknya).
+                    ...(suggestion.noteI18n.partKey
+                      ? { part: t(suggestion.noteI18n.partKey) }
+                      : {}),
+                  })
+                : suggestion.note}
+            </span>
           </p>
         ) : tooLow ? (
           <p className="mt-1 text-[11px] font-medium text-red-600 dark:text-red-400">
-            Target harus lebih besar dari KM saat ini ({latestKm.toLocaleString("id-ID")} km)
+            {t("reminderPage.targetTooLow", { km: formatNumber(latestKm) })}
           </p>
         ) : (
           <p className="mt-1 text-[11px] text-(--color-text-muted)">
-            KM saat ini {latestKm.toLocaleString("id-ID")} km
+            {t("reminderPage.currentKmHint", { km: formatNumber(latestKm) })}
             {suggestedTarget != null
-              ? ` · Saran ${suggestedTarget.toLocaleString("id-ID")} km`
+              ? t("reminderPage.suggestedKm", { km: formatNumber(suggestedTarget) })
               : ""}
           </p>
         )
@@ -1071,13 +1114,13 @@ function KmField({
       {enabled ? (
         <div className="mt-3 border-t border-(--color-border)/40 pt-2.5">
           <p className="text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)">
-            Setelah threshold
+            {t("reminderPage.afterThreshold")}
           </p>
           <div className="mt-1.5 flex flex-wrap gap-2">
             {(
               [
-                { mode: "once" as const, label: "Sekali" },
-                { mode: "daily" as const, label: "Setiap hari" },
+                { mode: "once" as const, label: t("reminderPage.alertOnce") },
+                { mode: "daily" as const, label: t("reminderPage.alertDaily") },
               ]
             ).map(({ mode, label }) => {
               const active = alertMode === mode;
@@ -1096,8 +1139,8 @@ function KmField({
           </div>
           <p className="mt-1.5 text-[10px] text-(--color-text-muted)">
             {alertMode === "daily"
-              ? "Akan terus diingatkan tiap hari sampai kamu tandai selesai"
-              : "Cukup diingatkan sekali saat threshold terlewati"}
+              ? t("reminderPage.alertDailyHint")
+              : t("reminderPage.alertOnceHint")}
           </p>
         </div>
       ) : null}
@@ -1128,6 +1171,7 @@ function ScheduleField({
   onModeChange: (next: "auto" | "manual") => void;
   suggestion: TimeSuggestion;
 }) {
+  const { t, formatDate } = useTranslation();
   const kind = schedule?.kind ?? null;
   const autoAvailable = suggestion.available;
   const isAuto = enabled && autoAvailable && mode === "auto";
@@ -1147,7 +1191,7 @@ function ScheduleField({
       }`}
     >
       <ToggleHeader
-        label="Gunakan jadwal waktu"
+        label={t("reminderPage.useSchedule")}
         enabled={enabled}
         onChange={onEnabledChange}
       />
@@ -1157,33 +1201,49 @@ function ScheduleField({
         <ModeSegment
           mode={mode}
           onChange={onModeChange}
-          autoLabel="Otomatis"
-          manualLabel="Manual"
+          autoLabel={t("reminderPage.auto")}
+          manualLabel={t("reminderPage.manual")}
         />
       ) : null}
 
       {!enabled ? (
         <p className="mt-2 text-[11px] text-(--color-text-muted)">
-          Atur kapan reminder muncul (sekali, berulang, atau hari/tanggal tertentu)
+          {t("reminderPage.scheduleDisabledHint")}
         </p>
       ) : isAuto ? (
         // Auto mode preview: show the computed date + source note. Inputs
         // hidden — user must tap "Manual" to tweak.
         <div className="mt-3 rounded-lg border border-(--color-primary)/40 bg-(--color-primary-soft)/30 p-3">
           <p className="text-[10px] font-bold uppercase tracking-wider text-(--color-primary)">
-            Ingatkan pada
+            {t("reminderPage.remindOn")}
           </p>
           <p className="mt-0.5 text-sm font-bold tabular-nums text-(--color-text)">
-            {suggestion.iso ? formatLongDate(suggestion.iso) : "—"}
+            {suggestion.iso
+              ? formatDate(suggestion.iso, {
+                  weekday: "short",
+                  day: "numeric",
+                  month: "long",
+                  year: "numeric",
+                })
+              : "—"}
             {suggestion.daysAhead != null ? (
               <span className="ml-1.5 text-xs font-medium text-(--color-text-secondary)">
-                · {suggestion.daysAhead} hari lagi
+                {t("reminderPage.daysAhead", { n: suggestion.daysAhead })}
               </span>
             ) : null}
           </p>
           <p className="mt-1.5 flex items-start gap-1 text-[11px] text-(--color-text-muted)">
             <SystemDot source={suggestion.source} />
-            <span>{suggestion.note}</span>
+            <span>
+              {suggestion.noteI18n.key
+                ? t(suggestion.noteI18n.key, {
+                    ...suggestion.noteI18n.vars,
+                    ...(suggestion.noteI18n.partKey
+                      ? { part: t(suggestion.noteI18n.partKey) }
+                      : {}),
+                  })
+                : suggestion.note}
+            </span>
           </p>
         </div>
       ) : (
@@ -1191,7 +1251,7 @@ function ScheduleField({
           {/* Tipe pengingat */}
           <div>
             <p className="text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)">
-              Tipe pengingat
+              {t("reminderPage.reminderType")}
             </p>
             <div className="mt-1.5 flex flex-wrap gap-2">
               <button
@@ -1200,7 +1260,7 @@ function ScheduleField({
                 className={`${CHIP_BASE} ${tipe === "once" ? CHIP_ACTIVE : CHIP_IDLE}`}
                 aria-pressed={tipe === "once"}
               >
-                Sekali
+                {t("reminderPage.once")}
               </button>
               <button
                 type="button"
@@ -1214,7 +1274,7 @@ function ScheduleField({
                 className={`${CHIP_BASE} ${tipe === "repeat" ? CHIP_ACTIVE : CHIP_IDLE}`}
                 aria-pressed={tipe === "repeat"}
               >
-                Berulang
+                {t("reminderPage.repeat")}
               </button>
             </div>
           </div>
@@ -1226,7 +1286,7 @@ function ScheduleField({
                 htmlFor="schedule-once-date"
                 className="text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)"
               >
-                Ingatkan pada tanggal
+                {t("reminderPage.remindOnDate")}
               </label>
               <input
                 id="schedule-once-date"
@@ -1246,14 +1306,14 @@ function ScheduleField({
             <>
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)">
-                  Interval waktu
+                  {t("reminderPage.timeInterval")}
                 </p>
                 <div className="mt-1.5 flex flex-wrap gap-2">
                   {(
                     [
-                      { k: "daily", label: "Setiap hari" },
-                      { k: "weekly", label: "Setiap minggu" },
-                      { k: "monthly", label: "Setiap bulan" },
+                      { k: "daily", label: t("reminderPage.everyDay") },
+                      { k: "weekly", label: t("reminderPage.everyWeek") },
+                      { k: "monthly", label: t("reminderPage.everyMonth") },
                     ] as const
                   ).map(({ k, label }) => {
                     const active = schedule.kind === k;
@@ -1276,7 +1336,7 @@ function ScheduleField({
               {schedule.kind === "weekly" ? (
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)">
-                    Pilih hari (bisa lebih dari satu)
+                    {t("reminderPage.pickWeekdays")}
                   </p>
                   <div className="mt-1.5 flex flex-wrap gap-2">
                     {WEEKDAYS.map((w) => {
@@ -1293,9 +1353,9 @@ function ScheduleField({
                           }}
                           className={`${CHIP_BASE} ${active ? CHIP_ACTIVE : CHIP_IDLE}`}
                           aria-pressed={active}
-                          aria-label={w.long}
+                          aria-label={t(w.longKey)}
                         >
-                          {w.short}
+                          {t(w.shortKey)}
                         </button>
                       );
                     })}
@@ -1310,7 +1370,7 @@ function ScheduleField({
                     htmlFor="schedule-dom"
                     className="text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)"
                   >
-                    Tanggal tiap bulan (1–31)
+                    {t("reminderPage.dayOfMonth")}
                   </label>
                   <input
                     id="schedule-dom"
@@ -1328,7 +1388,7 @@ function ScheduleField({
                     className="mt-1 w-24 rounded-lg border border-(--color-border) bg-(--color-surface) px-3 py-2 text-sm font-semibold tabular-nums outline-none transition-colors focus:border-(--color-primary) focus:ring-2 focus:ring-(--color-primary)/20"
                   />
                   <p className="mt-1 text-[11px] text-(--color-text-muted)">
-                    Tanggal 29–31 otomatis menyesuaikan saat bulan lebih pendek
+                    {t("reminderPage.shortMonthHint")}
                   </p>
                 </div>
               ) : null}
@@ -1361,10 +1421,11 @@ function ModeSegment({
   autoLabel: string;
   manualLabel: string;
 }) {
+  const { t } = useTranslation();
   return (
     <div
       role="radiogroup"
-      aria-label="Sumber nilai reminder"
+      aria-label={t("reminderPage.valueSourceAria")}
       className="mt-2 inline-flex rounded-full border border-(--color-border)/60 bg-(--color-surface) p-0.5 text-[11px] font-semibold"
     >
       {(
@@ -1406,19 +1467,6 @@ function SystemDot({ source }: { source: "history" | "fallback" | "none" }) {
         ? "bg-amber-500"
         : "bg-(--color-text-muted)";
   return <span aria-hidden className={`mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full ${cls}`} />;
-}
-
-/** Format ISO datetime → "Sen, 5 Mei 2026" (Indonesian locale). Used in the
- *  schedule auto-mode preview. Fails gracefully on invalid input. */
-function formatLongDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString("id-ID", {
-    weekday: "short",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
 }
 
 function ToggleHeader({
@@ -1463,6 +1511,7 @@ function ToggleHeader({
  * ──────────────────────────────────────────────────────────────── */
 
 function EmptyReminderCTA({ onClick, hidden }: { onClick: () => void; hidden: boolean }) {
+  const { t } = useTranslation();
   if (hidden) return null;
   return (
     <div className="flex flex-1 flex-col items-center justify-center px-1 py-6 sm:py-10">
@@ -1470,7 +1519,7 @@ function EmptyReminderCTA({ onClick, hidden }: { onClick: () => void; hidden: bo
         type="button"
         onClick={onClick}
         className="group flex w-full max-w-[280px] flex-col items-center rounded-[1.75rem] border border-(--color-border) bg-(--color-surface) p-6 pb-7 text-center shadow-sm ring-1 ring-black/[0.03] transition-all hover:border-(--color-primary)/35 hover:shadow-md hover:ring-(--color-primary)/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-primary) focus-visible:ring-offset-2 focus-visible:ring-offset-(--color-bg) active:scale-[0.98] dark:ring-white/[0.04]"
-        aria-label="Tambah reminder pertama"
+        aria-label={t("reminderPage.emptyAria")}
       >
         <div className="mb-5 flex h-[7.25rem] w-full max-w-[200px] items-center justify-center rounded-2xl border-2 border-dashed border-(--color-primary)/35 bg-(--color-primary-soft) transition-colors group-hover:border-(--color-primary)/55 group-hover:bg-(--color-primary)/15">
           <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-(--color-primary) text-white shadow-lg shadow-(--color-primary)/35 transition-transform group-hover:scale-105 group-active:scale-95">
@@ -1478,14 +1527,14 @@ function EmptyReminderCTA({ onClick, hidden }: { onClick: () => void; hidden: bo
           </div>
         </div>
         <h2 className="text-lg font-bold tracking-tight text-(--color-text)">
-          Belum ada reminder
+          {t("reminderPage.emptyTitle")}
         </h2>
         <p className="mt-2 text-sm leading-relaxed text-(--color-text-secondary)">
-          Pilih preset (Ganti oli, CVT, Aki…) — kami yang isi interval & tanggalnya.
+          {t("reminderPage.emptySubtitle")}
         </p>
         <span className="mt-5 inline-flex items-center gap-1.5 text-sm font-semibold text-(--color-primary)">
           <span className="rounded-lg bg-(--color-primary-soft) px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-(--color-primary)">
-            + Tambah Reminder
+            {t("reminderPage.emptyCta")}
           </span>
         </span>
       </button>

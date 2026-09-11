@@ -1,12 +1,13 @@
 import { supabase } from "../client";
 import { mapServiceRecord } from "../mappers";
 import { requireUser } from "../auth-helpers";
+import { AppError } from "@/lib/errors";
 import type { ServicePartLine, ServiceRecord } from "@/lib/types";
 
 async function assertVehicleOwned(vehicleId: string): Promise<void> {
   const user = await requireUser();
   const { data: v } = await supabase.from("vehicles").select("user_id").eq("id", vehicleId).maybeSingle();
-  if (!v || v.user_id !== user.id) throw new Error("Kendaraan tidak ditemukan");
+  if (!v || v.user_id !== user.id) throw new AppError("vehicle_not_found");
 }
 
 export type ServiceRecordWriteInput = {

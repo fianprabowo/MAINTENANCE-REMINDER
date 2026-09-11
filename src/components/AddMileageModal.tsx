@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import OdometerScanButton from "@/components/OdometerScanButton";
 import { insertMileage } from "@/lib/supabase";
 import { toast } from "sonner";
-import { useTranslation } from "@/lib/i18n";
+import { useAppErrorMessage, useTranslation } from "@/lib/i18n";
 
 export type AddMileageModalProps = {
   open: boolean;
@@ -27,6 +27,7 @@ export default function AddMileageModal({
   title,
 }: AddMileageModalProps) {
   const { t, formatNumber } = useTranslation();
+  const describeAppError = useAppErrorMessage();
   // Default title berasal dari i18n; caller boleh tetap override
   // (mis. Vehicle Detail memakai copy sendiri).
   const resolvedTitle = title ?? t("addMileage.title");
@@ -108,7 +109,7 @@ export default function AddMileageModal({
       await Promise.resolve(onSaved());
       onClose();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : t("addMileage.saveFailed"));
+      toast.error(describeAppError(err, t("addMileage.saveFailed")));
     } finally {
       setSaving(false);
     }

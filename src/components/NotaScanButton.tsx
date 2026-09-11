@@ -1,8 +1,9 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { scanNotaFromFile } from "@/lib/nota-scan";
+import { NotaScanError, scanNotaFromFile } from "@/lib/nota-scan";
 import type { NotaScanResult } from "@/lib/nota-normalize";
+import { useTranslation, type TranslationKey } from "@/lib/i18n";
 import { toast } from "sonner";
 
 type NotaScanButtonProps = {
@@ -56,6 +57,7 @@ export default function NotaScanButton({
   disabled = false,
   className = "",
 }: NotaScanButtonProps) {
+  const { t } = useTranslation();
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
@@ -66,9 +68,16 @@ export default function NotaScanButton({
     try {
       const result = await scanNotaFromFile(file);
       onDetected(result, file);
-      toast.success(`${result.items.length} baris part terdeteksi dari nota`);
+      toast.success(t("notaScanButton.detected", { n: result.items.length }));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Gagal membaca nota");
+      // Structured `NotaScanError` → translate via locale keys. Fallback
+      // ke pesan generik supaya user tidak melihat English debug string
+      // atau Indonesian mentah.
+      if (err instanceof NotaScanError) {
+        toast.error(t(`notaScanError.${err.code}` as TranslationKey));
+      } else {
+        toast.error(t("notaScanButton.readFailed"));
+      }
     } finally {
       setLoading(false);
       if (cameraInputRef.current) cameraInputRef.current.value = "";
@@ -81,7 +90,7 @@ export default function NotaScanButton({
   return (
     <div className={`flex flex-col gap-2 ${className}`}>
       <p className="text-[10px] font-bold uppercase tracking-wide text-(--color-text-muted)">
-        Upload / scan nota penjualan
+        {t("notaScanButton.label")}
       </p>
       <div className="grid grid-cols-2 gap-2">
         <input
@@ -108,7 +117,7 @@ export default function NotaScanButton({
           className="inline-flex items-center justify-center gap-2 rounded-xl border border-(--color-border) bg-(--color-bg) px-3 py-2.5 text-xs font-bold text-(--color-text) shadow-sm transition-all duration-150 hover:border-(--color-primary)/40 hover:text-(--color-primary) active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
         >
           <CameraIcon className="h-4 w-4" />
-          {loading ? "Memindai…" : "Kamera"}
+          {loading ? t("notaScanButton.scanning") : t("notaScanButton.camera")}
         </button>
         <button
           type="button"
@@ -117,7 +126,7 @@ export default function NotaScanButton({
           className="inline-flex items-center justify-center gap-2 rounded-xl border border-(--color-border) bg-(--color-bg) px-3 py-2.5 text-xs font-bold text-(--color-text) shadow-sm transition-all duration-150 hover:border-(--color-primary)/40 hover:text-(--color-primary) active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
         >
           <FileIcon className="h-4 w-4" />
-          {loading ? "Memindai…" : "Foto / PDF"}
+          {loading ? t("notaScanButton.scanning") : t("notaScanButton.photoPdf")}
         </button>
       </div>
     </div>

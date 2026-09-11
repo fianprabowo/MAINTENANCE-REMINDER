@@ -14,6 +14,7 @@ import FuelGauge from "@/components/FuelGauge";
 import MotorFuelEstimator from "@/components/MotorFuelEstimator";
 import { DetailSkeleton } from "@/components/LoadingSkeleton";
 import { useAnimatedInt } from "@/lib/use-animated-int";
+import { useAppErrorMessage, useTranslation } from "@/lib/i18n";
 
 /** Status thresholds (sama dengan spec sebelumnya & komponen lain). */
 type Zone = "good" | "warn" | "bad";
@@ -27,30 +28,21 @@ function zoneFromFuel(p: number): Zone {
  * Tone tokens. Hanya zona/status yang diberi warna — sisa UI sengaja netral
  * (white surface + soft shadow) sesuai brief: "Fokus warna hanya pada status".
  */
-const TONE: Record<
-  Zone,
-  { text: string; chipBg: string; chipText: string; label: string; sub: string }
-> = {
+const TONE: Record<Zone, { text: string; chipBg: string; chipText: string }> = {
   good: {
     text: "text-emerald-600 dark:text-emerald-400",
     chipBg: "bg-emerald-50 dark:bg-emerald-900/25",
     chipText: "text-emerald-700 dark:text-emerald-300",
-    label: "Aman",
-    sub: "Masih nyaman untuk jalan",
   },
   warn: {
     text: "text-amber-600 dark:text-amber-400",
     chipBg: "bg-amber-50 dark:bg-amber-900/25",
     chipText: "text-amber-700 dark:text-amber-300",
-    label: "Waspada",
-    sub: "Pertimbangkan isi ulang",
   },
   bad: {
     text: "text-red-600 dark:text-red-400",
     chipBg: "bg-red-50 dark:bg-red-900/25",
     chipText: "text-red-700 dark:text-red-300",
-    label: "Segera isi",
-    sub: "Bensin menipis — isi sekarang",
   },
 };
 
@@ -64,8 +56,17 @@ export default function VehicleFuelPage() {
   const { id } = useParams<{ id: string }>();
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
+  const { t, formatNumber } = useTranslation();
+  const describeAppError = useAppErrorMessage();
   const { setSelectedVehicleId } = useSelectedVehicle();
   const { openMileageModal } = useMileageModal();
+
+  const zoneCopy = (zone: Zone) =>
+    ({
+      good: { label: t("fuelPage.zoneGood"), sub: t("fuelPage.zoneGoodSub") },
+      warn: { label: t("fuelPage.zoneWarn"), sub: t("fuelPage.zoneWarnSub") },
+      bad: { label: t("fuelPage.zoneBad"), sub: t("fuelPage.zoneBadSub") },
+    })[zone];
   const [detail, setDetail] = useState<VehicleDetail | null>(null);
   const [loading, setLoading] = useState(true);
   /** Quick-action busy flag — terpisah dari estimator detail busy. */
@@ -140,7 +141,7 @@ export default function VehicleFuelPage() {
     if (!detail) return;
     const km = detail.latest_mileage?.mileage;
     if (km == null) {
-      toast.error("Catat KM odometer dulu, baru bisa tandai isi penuh.");
+      toast.error(t("fuelPage.toastNeedKm"));
       // Tunjukkan jalan ke user: buka mileage modal langsung.
       void openMileageModal();
       return;
@@ -151,14 +152,14 @@ export default function VehicleFuelPage() {
         mileage_at_fill: km,
         tank_full: true,
       });
-      toast.success("Tangki ditandai 100% di KM sekarang");
+      toast.success(t("fuelPage.toastFilled"));
       window.dispatchEvent(new CustomEvent("mr:vehicle-data-changed"));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Gagal menyimpan");
+      toast.error(describeAppError(err, t("fuelPage.toastSaveFailed")));
     } finally {
       setFillingNow(false);
     }
-  }, [detail, openMileageModal]);
+  }, [detail, openMileageModal, t, describeAppError]);
 
   if (authLoading || (loading && !detail)) {
     return (
@@ -176,6 +177,7 @@ export default function VehicleFuelPage() {
   const { vehicle, latest_mileage, motorcycle_category } = detail;
   const isMoto = vehicle.type === "motorcycle";
   const tone = TONE[derived.zone];
+  const copy = zoneCopy(derived.zone);
   const hasRange = derived.rangeKm != null;
 
   return (
@@ -186,7 +188,7 @@ export default function VehicleFuelPage() {
           href="/dashboard"
           className="inline-flex items-center text-sm font-semibold text-(--color-text-secondary) transition-colors hover:text-(--color-text)"
         >
-          ← Home
+          {t("fuelPage.home")}
         </Link>
 
         <div className="mt-4 flex items-start gap-3">
@@ -194,7 +196,7 @@ export default function VehicleFuelPage() {
             ⛽
           </div>
           <div className="min-w-0">
-            <h1 className="text-xl font-extrabold tracking-tight">Bensin</h1>
+            <h1 className="text-xl font-extrabold tracking-tight">{t("fuelPage.title")}</h1>
             <p className="mt-0.5 truncate text-sm text-(--color-text-secondary)">
               {vehicle.name}
             </p>
@@ -211,13 +213,13 @@ export default function VehicleFuelPage() {
             {hasRange ? (
               <p className={`flex items-baseline justify-center gap-1.5 ${tone.text}`}>
                 <span className="text-5xl font-black tabular-nums tracking-tight sm:text-6xl">
-                  {animatedRange.toLocaleString("id-ID")}
+                  {formatNumber(animatedRange)}
                 </span>
                 <span className="text-base font-bold tracking-tight">km</span>
               </p>
             ) : (
               <p className="text-2xl font-extrabold tracking-tight text-(--color-text)">
-                Estimasi belum siap
+                {t("fuelPage.rangeNotReady")}
               </p>
             )}
 
@@ -227,23 +229,23 @@ export default function VehicleFuelPage() {
                 className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${tone.chipBg} ${tone.chipText}`}
               >
                 <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-current" />
-                {tone.label}
+                {copy.label}
               </span>
               {derived.remainingLiters != null ? (
                 <span className="text-xs font-semibold text-(--color-text-secondary)">
-                  Sisa{" "}
+                  {t("fuelPage.remaining")}{" "}
                   <span className="tabular-nums text-(--color-text)">
                     {derived.remainingLiters.toFixed(1)} L
                   </span>
                 </span>
               ) : (
                 <span className="text-xs text-(--color-text-muted)">
-                  Set efisiensi & tangki di Detail
+                  {t("fuelPage.setEfficiencyHint")}
                 </span>
               )}
             </div>
 
-            <p className="mt-1.5 text-[11px] text-(--color-text-muted)">{tone.sub}</p>
+            <p className="mt-1.5 text-[11px] text-(--color-text-muted)">{copy.sub}</p>
           </div>
 
           {/* Gauge — secondary, lebih kecil dari hero number */}
@@ -253,7 +255,7 @@ export default function VehicleFuelPage() {
 
           {/* Persentase kecil di bawah gauge — referensi sekunder */}
           <p className="mt-1 text-center text-[11px] font-semibold text-(--color-text-muted)">
-            Indikator{" "}
+            {t("fuelPage.indicator")}{" "}
             <span className={`tabular-nums font-extrabold ${tone.text}`}>
               {animatedLevel}%
             </span>
@@ -270,27 +272,27 @@ export default function VehicleFuelPage() {
               className={PRIMARY_BTN}
             >
               {fillingNow ? (
-                "Menyimpan…"
+                t("fuelPage.saving")
               ) : (
                 <>
                   <FillIcon className="h-4 w-4" />
-                  Isi penuh sekarang
+                  {t("fuelPage.fillNow")}
                 </>
               )}
             </button>
             {latest_mileage?.mileage == null ? (
               <p className="text-center text-[11px] text-(--color-text-muted)">
-                Belum ada KM odometer — kami akan minta KM dulu.
+                {t("fuelPage.noKmHint")}
               </p>
             ) : (
               <p className="text-center text-[11px] text-(--color-text-muted)">
-                Akan disimpan di KM {latest_mileage.mileage.toLocaleString("id-ID")} dengan tangki dianggap 100%.
+                {t("fuelPage.fillAtKmHint", { km: formatNumber(latest_mileage.mileage) })}
               </p>
             )}
           </div>
         ) : (
           <p className="mt-4 rounded-2xl border border-(--color-border)/60 bg-(--color-surface) p-4 text-sm text-(--color-text-secondary) shadow-sm">
-            Estimasi tangki, jarak sejak isi, dan catatan isi penuh tersedia untuk kendaraan tipe motor.
+            {t("fuelPage.motorOnlyNote")}
           </p>
         )}
 
@@ -306,7 +308,7 @@ export default function VehicleFuelPage() {
             >
               <span className="flex items-center gap-2">
                 <SlidersIcon className="h-4 w-4 text-(--color-text-secondary)" />
-                Detail & perhitungan
+                {t("fuelPage.detailToggle")}
               </span>
               <ChevronIcon
                 className={`h-4 w-4 text-(--color-text-secondary) transition-transform duration-200 ${

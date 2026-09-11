@@ -1,5 +1,6 @@
 import type { ServiceRecord } from "./types";
 import type { PartKind } from "./part-kinds";
+import type { TranslationKey } from "@/lib/i18n";
 
 /**
  * Helper untuk halaman "Kondisi Part" (`/vehicles/[id]/condition`).
@@ -141,29 +142,76 @@ export function computePartLife(
 }
 
 /**
- * Format "sisa" untuk ditampilkan di card. Mengikuti driver % yang aktif:
- *   - km-based  → "Sisa 1.500 km" / "Sudah waktunya ganti"
- *   - time-based → "Sisa 30 hari" / "Sudah waktunya ganti"
+ * Structured "remaining" descriptor. Return a discriminated tag + numeric
+ * value; caller renders string via `t()` supaya bisa localize.
  *
- * Kalau belum ada data (last service null), return "Belum ada data servis".
+ * Kenapa tidak return string di sini? File ini bukan client-only (dipakai
+ * juga dari test dan bisa jadi server-side path lain), sehingga tidak boleh
+ * bergantung `useTranslation()` yang React-only.
  */
-export function formatRemaining(life: PartLifeResult): string {
+export type RemainingDescriptor =
+  | { kind: "empty" } // Belum ada data servis
+  | { kind: "overdue" } // Sudah waktunya ganti
+  | { kind: "km"; value: number } // Sisa X km
+  | { kind: "days"; value: number } // Sisa X hari
+  | { kind: "unknown" }; // "—" fallback
+
+export function describeRemaining(life: PartLifeResult): RemainingDescriptor {
   if (life.last_serviced_at == null && life.last_serviced_km == null) {
-    return "Belum ada data servis";
+    return { kind: "empty" };
   }
   if (life.driver === "km") {
-    if (life.remaining_km == null) return "—";
-    if (life.remaining_km <= 0) return "Sudah waktunya ganti";
-    return `Sisa ${life.remaining_km.toLocaleString("id-ID")} km`;
+    if (life.remaining_km == null) return { kind: "unknown" };
+    if (life.remaining_km <= 0) return { kind: "overdue" };
+    return { kind: "km", value: life.remaining_km };
   }
   if (life.driver === "time") {
-    if (life.remaining_days == null) return "—";
-    if (life.remaining_days <= 0) return "Sudah waktunya ganti";
-    return `Sisa ${life.remaining_days.toLocaleString("id-ID")} hari`;
+    if (life.remaining_days == null) return { kind: "unknown" };
+    if (life.remaining_days <= 0) return { kind: "overdue" };
+    return { kind: "days", value: life.remaining_days };
   }
-  return "—";
+  return { kind: "unknown" };
 }
 
+/**
+ * Legacy: return hardcoded Bahasa Indonesia. Dipertahankan untuk backward
+ * compat; UI baru sebaiknya pakai `describeRemaining()` + render sendiri
+ * via `t()` untuk locale awareness.
+ *
+ * @deprecated Gunakan `describeRemaining()` + `t()` di UI React.
+ */
+export function formatRemaining(life: PartLifeResult): string {
+  const d = describeRemaining(life);
+  switch (d.kind) {
+    case "empty":
+      return "Belum ada data servis";
+    case "overdue":
+      return "Sudah waktunya ganti";
+    case "km":
+      return `Sisa ${d.value.toLocaleString("id-ID")} km`;
+    case "days":
+      return `Sisa ${d.value.toLocaleString("id-ID")} hari`;
+    case "unknown":
+    default:
+      return "—";
+  }
+}
+
+/** i18n key untuk status label — caller panggil `t(statusLabelKey(status))`. */
+export function statusLabelKey(status: PartLifeStatus | null): TranslationKey {
+  switch (status) {
+    case "safe":
+      return "partCondition.statusSafe";
+    case "warn":
+      return "partCondition.statusWarn";
+    case "urgent":
+      return "partCondition.statusUrgent";
+    default:
+      return "partCondition.statusUnknown";
+  }
+}
+
+/** @deprecated Legacy Indonesian; pakai `statusLabelKey()` + `t()`. */
 export function statusLabel(status: PartLifeStatus | null): string {
   switch (status) {
     case "safe":

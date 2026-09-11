@@ -30,7 +30,9 @@ export {
   createReminderForVehicle,
   updateReminderForVehicle,
   deleteReminderForVehicle,
+  ReminderValidationError,
 } from "./services/reminders";
+export type { ReminderErrorCode } from "./services/reminders";
 
 export {
   fetchServiceRecordsForVehicle,

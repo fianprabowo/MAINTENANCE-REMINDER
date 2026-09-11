@@ -159,7 +159,12 @@ function LanguagePickerDialog({
   onClose: () => void;
   onSelect: (locale: Locale) => void;
   title: string;
-  subtitle: string;
+  /**
+   * Optional short helper text di bawah `title`. Kalau kosong / undefined,
+   * elemen `<p>` sengaja tidak dirender supaya tidak ada whitespace yang
+   * terlihat kosong (lebih rapi daripada `<p></p>`).
+   */
+  subtitle?: string;
 }) {
   const { t } = useTranslation();
   // `mounted` guard supaya `createPortal(document.body)` tidak dipanggil
@@ -305,7 +310,11 @@ function LanguagePickerDialog({
         <div className="space-y-4 px-5 pt-4 pb-[max(1.25rem,calc(env(safe-area-inset-bottom,0px)+1rem))] sm:p-6 sm:pb-7">
           <div>
             <h3 className="text-base font-bold">{title}</h3>
-            <p className="mt-0.5 text-xs text-(--color-text-secondary)">{subtitle}</p>
+            {subtitle ? (
+              <p className="mt-0.5 text-xs text-(--color-text-secondary)">
+                {subtitle}
+              </p>
+            ) : null}
           </div>
           <div className="space-y-2">
             {LOCALES.map((code) => {
@@ -493,9 +502,15 @@ export default function ProfilePage() {
                 {t("profile.languageSublabel")}
               </p>
             </div>
-            <span className="flex items-center gap-2 text-sm font-semibold text-(--color-text-secondary)">
-              <span aria-hidden>{LOCALE_FLAGS[locale]}</span>
-              <span>{LOCALE_LABELS[locale]}</span>
+            <span className="flex items-center gap-2">
+              {/* Bendera saja — lebih ringkas & language-neutral secara visual.
+                  `leading-none` mencegah emoji bikin baris jadi tinggi.
+                  `sr-only` di span teks memastikan screen reader tetap
+                  mendengar nama bahasa (emoji tidak diumumkan oleh AT). */}
+              <span aria-hidden className="text-lg leading-none">
+                {LOCALE_FLAGS[locale]}
+              </span>
+              <span className="sr-only">{LOCALE_LABELS[locale]}</span>
               <ChevronRight className="h-4 w-4 text-(--color-text-muted)/50" />
             </span>
           </button>

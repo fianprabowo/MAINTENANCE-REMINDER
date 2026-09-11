@@ -15,7 +15,7 @@ import {
 import type { AppNotification } from "@/lib/types";
 import { CardSkeleton } from "@/components/LoadingSkeleton";
 import SwipeableRow from "@/components/SwipeableRow";
-import { useTranslation } from "@/lib/i18n";
+import { useAppErrorMessage, useTranslation } from "@/lib/i18n";
 
 /* ──────────────────────────────────────────────────────────────────
  * Helpers
@@ -83,6 +83,7 @@ export default function NotificationsPage() {
   const router = useRouter();
   const { refresh: refreshGlobal } = useNotifications();
   const { t } = useTranslation();
+  const describeAppError = useAppErrorMessage();
   const relativeTime = useRelativeTime();
 
   const [items, setItems] = useState<AppNotification[]>([]);
@@ -107,11 +108,11 @@ export default function NotificationsPage() {
       });
       setItems(list);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : t("notifications.loadFailed"));
+      toast.error(describeAppError(err, t("notifications.loadFailed")));
     } finally {
       setLoading(false);
     }
-  }, [user, filter, t]);
+  }, [user, filter, t, describeAppError]);
 
   useEffect(() => {
     void load();
@@ -139,13 +140,13 @@ export default function NotificationsPage() {
           setItems((prev) =>
             prev.map((x) => (x.id === n.id ? { ...x, read_at: null } : x)),
           );
-          toast.error(err instanceof Error ? err.message : t("notifications.markReadFailed"));
+          toast.error(describeAppError(err, t("notifications.markReadFailed")));
           return;
         }
       }
       if (n.link_to) router.push(n.link_to);
     },
-    [router, refreshGlobal, t],
+    [router, refreshGlobal, t, describeAppError],
   );
 
   const handleMarkAllRead = useCallback(async () => {
@@ -160,9 +161,9 @@ export default function NotificationsPage() {
       toast.success(t("notifications.markAllToast"));
     } catch (err) {
       setItems(previous);
-      toast.error(err instanceof Error ? err.message : t("notifications.markAllFailed"));
+      toast.error(describeAppError(err, t("notifications.markAllFailed")));
     }
-  }, [items, unreadCount, refreshGlobal, t]);
+  }, [items, unreadCount, refreshGlobal, t, describeAppError]);
 
   const handleDelete = useCallback(
     async (n: AppNotification) => {
@@ -176,10 +177,10 @@ export default function NotificationsPage() {
         await refreshGlobal();
       } catch (err) {
         setItems(previous);
-        toast.error(err instanceof Error ? err.message : t("notifications.deleteFailed"));
+        toast.error(describeAppError(err, t("notifications.deleteFailed")));
       }
     },
-    [items, refreshGlobal, t],
+    [items, refreshGlobal, t, describeAppError],
   );
 
   if (authLoading || !user) return null;

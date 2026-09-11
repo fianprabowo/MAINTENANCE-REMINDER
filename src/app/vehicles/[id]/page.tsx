@@ -17,7 +17,7 @@ import StatusBadge from "@/components/StatusBadge";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { DetailSkeleton } from "@/components/LoadingSkeleton";
 import { toast } from "sonner";
-import { useTranslation } from "@/lib/i18n";
+import { useAppErrorMessage, useTranslation } from "@/lib/i18n";
 
 const btnPress = "transition-all duration-200 active:scale-95";
 
@@ -45,6 +45,7 @@ export default function VehicleDetailPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const { t, formatNumber, formatDate, locale } = useTranslation();
+  const describeAppError = useAppErrorMessage();
   const [detail, setDetail] = useState<VehicleDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -216,11 +217,11 @@ export default function VehicleDetailPage() {
     } catch (err) {
       // Rollback optimistic removal so the timeline reflects truth.
       setHistoryLogs(previous);
-      toast.error(err instanceof Error ? err.message : t("vehicleDetail.mileageDeleteFailed"));
+      toast.error(describeAppError(err, t("vehicleDetail.mileageDeleteFailed")));
     } finally {
       setDeletingMileage(false);
     }
-  }, [pendingDeleteMileage, id, historyLogs, refreshVehicleData, t]);
+  }, [pendingDeleteMileage, id, historyLogs, refreshVehicleData, t, describeAppError]);
 
   const handleDelete = async () => {
     setDeleting(true);
@@ -229,7 +230,7 @@ export default function VehicleDetailPage() {
       toast.success(t("vehicleDetail.vehicleDeleted"));
       router.replace("/dashboard");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : t("vehicleDetail.vehicleDeleteFailed"));
+      toast.error(describeAppError(err, t("vehicleDetail.vehicleDeleteFailed")));
       setDeleting(false);
       setConfirmDelete(false);
     }

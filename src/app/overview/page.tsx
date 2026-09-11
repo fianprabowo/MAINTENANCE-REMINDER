@@ -13,7 +13,7 @@ import { CardSkeleton } from "@/components/LoadingSkeleton";
 import SwipeableRow from "@/components/SwipeableRow";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import EmptyVehicleState from "@/components/EmptyVehicleState";
-import { useTranslation } from "@/lib/i18n";
+import { useAppErrorMessage, useTranslation } from "@/lib/i18n";
 
 function PlusIcon({ className }: { className?: string }) {
   return (
@@ -39,6 +39,7 @@ export default function OverviewPage() {
   const router = useRouter();
   const { selectedVehicleId, setSelectedVehicleId } = useSelectedVehicle();
   const { t } = useTranslation();
+  const describeAppError = useAppErrorMessage();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -113,7 +114,7 @@ export default function OverviewPage() {
     } catch (err) {
       // Rollback the optimistic update on failure.
       setVehicles(previous);
-      toast.error(err instanceof Error ? err.message : t("overview.deleteFailed"));
+      toast.error(describeAppError(err, t("overview.deleteFailed")));
     } finally {
       setDeleting(false);
       setPendingDelete(null);

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "@/lib/i18n";
 
 /**
  * SwipeableRow — reveals a destructive action button when the user swipes
@@ -34,7 +35,10 @@ interface SwipeableRowProps {
   onOpenChange: (open: boolean) => void;
   /** Disable the gesture entirely (e.g. while a delete is in flight). */
   disabled?: boolean;
-  /** Custom action button label. Defaults to "Hapus". */
+  /**
+   * Custom action button label. Falls back to a localized "Delete" (English)
+   * or "Hapus" (Indonesian) when not provided.
+   */
   actionLabel?: string;
 }
 
@@ -44,8 +48,13 @@ export default function SwipeableRow({
   isOpen,
   onOpenChange,
   disabled = false,
-  actionLabel = "Hapus",
+  actionLabel,
 }: SwipeableRowProps) {
+  const { t } = useTranslation();
+  // Fallback label localized. Caller boleh override lewat prop; ini cuma
+  // default supaya penggunaan `<SwipeableRow onAction={…}>` tanpa prop
+  // `actionLabel` tetap dapat translation gratis.
+  const effectiveActionLabel = actionLabel ?? t("swipeableRow.defaultAction");
   const [translateX, setTranslateX] = useState(isOpen ? -ACTION_WIDTH_PX : 0);
   const [dragging, setDragging] = useState(false);
 
@@ -172,7 +181,7 @@ export default function SwipeableRow({
           className="flex h-full w-full flex-col items-center justify-center gap-1 bg-red-500 text-xs font-bold text-white transition-colors hover:bg-red-600 disabled:opacity-60"
         >
           <TrashIcon className="h-5 w-5" />
-          <span>{actionLabel}</span>
+          <span>{effectiveActionLabel}</span>
         </button>
       </div>
 

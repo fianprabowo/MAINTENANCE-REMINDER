@@ -2,7 +2,12 @@
 
 import Link from "next/link";
 import { toast } from "sonner";
+import { useTranslation } from "@/lib/i18n";
 import type { AppNotification } from "@/lib/types";
+
+/** Convenience type — signature dari `useTranslation()`. Digunakan supaya
+ *  `headline()` helper bisa terima `t` dari caller tanpa duplicate typing. */
+type TFn = ReturnType<typeof useTranslation>["t"];
 
 /* ──────────────────────────────────────────────────────────────────
  * Unread notifications first-load toast.
@@ -51,10 +56,20 @@ function pickTone(latest: AppNotification | null, totalUnread: number): Tone {
   };
 }
 
-function headline(count: number): string {
-  if (count === 1) return "1 pengingat baru";
-  if (count <= 9) return `${count} pengingat baru`;
-  return `${count} pengingat`;
+/**
+ * Compose the toast headline based on count. Buckets:
+ *   - count = 1 → "1 new reminder"
+ *   - 2..9      → "{n} new reminders"
+ *   - 10+       → "{n} reminders" (drop the "new" so headline stays compact)
+ *
+ * Rationale: many locales (English included) have different plural rules
+ * per bucket. Keeping the bucket boundaries in code makes translator work
+ * predictable — they translate 3 fixed forms, not do arithmetic.
+ */
+function headline(count: number, t: TFn): string {
+  if (count === 1) return t("unreadToast.headlineOne");
+  if (count <= 9) return t("unreadToast.headlineFew", { n: count });
+  return t("unreadToast.headlineMany", { n: count });
 }
 
 export type UnreadToastPayload = {
@@ -72,8 +87,9 @@ export function UnreadNotificationsCard({
   latest,
   toastId,
 }: UnreadToastPayload & { toastId: string | number }) {
+  const { t } = useTranslation();
   const tone = pickTone(latest, count);
-  const title = headline(count);
+  const title = headline(count, t);
 
   return (
     <Link
@@ -82,8 +98,8 @@ export function UnreadNotificationsCard({
       role="alert"
       aria-label={
         latest
-          ? `${title}. Terbaru: ${latest.title}. Tap untuk buka, geser untuk tutup.`
-          : `${title}. Tap untuk buka, geser untuk tutup.`
+          ? t("unreadToast.ariaWithLatest", { title, latest: latest.title })
+          : t("unreadToast.ariaSimple", { title })
       }
       className="relative block w-[min(92vw,360px)] overflow-hidden rounded-2xl border border-(--color-border)/60 bg-(--color-surface) shadow-2xl backdrop-blur transition-transform active:scale-[0.99]"
     >

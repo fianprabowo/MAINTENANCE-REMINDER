@@ -1,9 +1,17 @@
 import { cropCanvas, type CropRect } from "./odometer-image";
+import type { TranslationKey } from "@/lib/i18n";
 
 export type ValidationIssue = {
   id: "blur" | "dark" | "bright" | "low_contrast" | "resolution" | "crop_size";
   level: "error" | "warning";
+  /**
+   * Legacy pre-formatted string (Bahasa Indonesia). Dipertahankan untuk
+   * backward compat + toast/log fallback. UI baru sebaiknya baca `messageKey`
+   * dan panggil `t(messageKey)`.
+   */
   message: string;
+  /** i18n key yang bisa langsung dipakai `t(messageKey)`. */
+  messageKey: TranslationKey;
 };
 
 export type ValidationResult = {
@@ -95,6 +103,7 @@ export function validateOdometerImage(
       id: "resolution",
       level: "error",
       message: "Resolusi foto terlalu kecil. Dekatkan kamera ke layar odometer.",
+      messageKey: "odometerValidate.resolution",
     });
   }
 
@@ -103,6 +112,7 @@ export function validateOdometerImage(
       id: "crop_size",
       level: "error",
       message: "Area crop terlalu kecil. Geser kotak agar menutupi baris angka.",
+      messageKey: "odometerValidate.cropSize",
     });
   }
 
@@ -121,12 +131,14 @@ export function validateOdometerImage(
       id: "blur",
       level: "error",
       message: "Foto terlalu blur. Pegang HP stabil dan fokuskan ke angka odometer.",
+      messageKey: "odometerValidate.blurError",
     });
   } else if (blurScore < BLUR_WARNING) {
     issues.push({
       id: "blur",
       level: "warning",
       message: "Foto sedikit blur. Hasil OCR mungkin kurang akurat.",
+      messageKey: "odometerValidate.blurWarning",
     });
   }
 
@@ -135,12 +147,14 @@ export function validateOdometerImage(
       id: "dark",
       level: "error",
       message: "Foto terlalu gelap. Nyalakan lampu dashboard atau flash.",
+      messageKey: "odometerValidate.dark",
     });
   } else if (brightness > BRIGHTNESS_BRIGHT) {
     issues.push({
       id: "bright",
       level: "error",
       message: "Foto overexposed. Kurangi cahaya langsung ke layar.",
+      messageKey: "odometerValidate.bright",
     });
   }
 
@@ -149,6 +163,7 @@ export function validateOdometerImage(
       id: "low_contrast",
       level: "warning",
       message: "Kontras rendah. Pastikan angka terlihat jelas dari background.",
+      messageKey: "odometerValidate.lowContrast",
     });
   }
 

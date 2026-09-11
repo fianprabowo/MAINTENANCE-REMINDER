@@ -12,6 +12,8 @@
  * with a discriminated union and a couple of helpers.
  */
 
+import type { TranslationKey } from "@/lib/i18n";
+
 export type ScheduleKind = "once" | "daily" | "weekly" | "monthly";
 
 export type ScheduleSpec =
@@ -24,15 +26,24 @@ export type ScheduleSpec =
  * Display order is Mon→Sun (Indonesian convention) even though the stored
  * value follows JS's `Date.getDay()` numbering (Sunday=0). Render code reads
  * this list top-to-bottom; storage stays raw.
+ *
+ * `short/long` string dipertahankan untuk backward compat + server-side.
+ * UI baru sebaiknya baca `shortKey/longKey` dan panggil `t()` sendiri.
  */
-export const WEEKDAYS: readonly { value: number; short: string; long: string }[] = [
-  { value: 1, short: "Sen", long: "Senin" },
-  { value: 2, short: "Sel", long: "Selasa" },
-  { value: 3, short: "Rab", long: "Rabu" },
-  { value: 4, short: "Kam", long: "Kamis" },
-  { value: 5, short: "Jum", long: "Jumat" },
-  { value: 6, short: "Sab", long: "Sabtu" },
-  { value: 0, short: "Min", long: "Minggu" },
+export const WEEKDAYS: readonly {
+  value: number;
+  short: string;
+  long: string;
+  shortKey: TranslationKey;
+  longKey: TranslationKey;
+}[] = [
+  { value: 1, short: "Sen", long: "Senin", shortKey: "weekdays.monShort", longKey: "weekdays.monLong" },
+  { value: 2, short: "Sel", long: "Selasa", shortKey: "weekdays.tueShort", longKey: "weekdays.tueLong" },
+  { value: 3, short: "Rab", long: "Rabu", shortKey: "weekdays.wedShort", longKey: "weekdays.wedLong" },
+  { value: 4, short: "Kam", long: "Kamis", shortKey: "weekdays.thuShort", longKey: "weekdays.thuLong" },
+  { value: 5, short: "Jum", long: "Jumat", shortKey: "weekdays.friShort", longKey: "weekdays.friLong" },
+  { value: 6, short: "Sab", long: "Sabtu", shortKey: "weekdays.satShort", longKey: "weekdays.satLong" },
+  { value: 0, short: "Min", long: "Minggu", shortKey: "weekdays.sunShort", longKey: "weekdays.sunLong" },
 ] as const;
 
 export const DEFAULT_TRIGGER_HOUR = 9;

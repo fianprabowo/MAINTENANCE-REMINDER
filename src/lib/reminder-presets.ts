@@ -10,6 +10,8 @@
  * match exactly, otherwise INSERTs will fail with a constraint violation.
  */
 
+import type { TranslationKey } from "@/lib/i18n";
+
 export type ReminderPresetSlug =
   | "oil_change"
   | "regular_service"
@@ -19,8 +21,16 @@ export type ReminderPresetSlug =
 
 export interface ReminderPreset {
   slug: ReminderPresetSlug;
-  /** Short human label used on chips & list cards. */
+  /**
+   * Short human label used on chips & list cards.
+   *
+   * Legacy: dipertahankan untuk path server-side (notifications) yang
+   * belum locale-aware. Untuk UI baru gunakan `labelKey` supaya bisa
+   * ditranslate lewat `t()`.
+   */
   label: string;
+  /** i18n key untuk `label` — dipakai oleh UI React components. */
+  labelKey: TranslationKey;
   /** Single-glyph icon, kept simple to avoid an icon library dependency. */
   icon: string;
   /**
@@ -52,6 +62,7 @@ export const REMINDER_PRESETS: readonly ReminderPreset[] = [
   {
     slug: "oil_change",
     label: "Ganti oli",
+    labelKey: "reminderPreset.oilChange",
     icon: "🛢️",
     km: 1500,
     days: 0,
@@ -63,6 +74,7 @@ export const REMINDER_PRESETS: readonly ReminderPreset[] = [
   {
     slug: "regular_service",
     label: "Servis rutin",
+    labelKey: "reminderPreset.regularService",
     icon: "🔧",
     km: 5000,
     days: 0,
@@ -74,6 +86,7 @@ export const REMINDER_PRESETS: readonly ReminderPreset[] = [
   {
     slug: "cvt",
     label: "CVT",
+    labelKey: "reminderPreset.cvt",
     icon: "⚙️",
     km: 10000,
     days: 0,
@@ -85,6 +98,7 @@ export const REMINDER_PRESETS: readonly ReminderPreset[] = [
   {
     slug: "brake",
     label: "Rem",
+    labelKey: "reminderPreset.brake",
     icon: "🛑",
     km: 5000,
     days: 0,
@@ -96,6 +110,7 @@ export const REMINDER_PRESETS: readonly ReminderPreset[] = [
   {
     slug: "battery",
     label: "Aki",
+    labelKey: "reminderPreset.battery",
     icon: "🔋",
     km: 0,
     days: 730,

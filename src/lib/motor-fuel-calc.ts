@@ -3,6 +3,8 @@
  * Hasil perkiraan; pemakaian riil bisa berbeda karena kondisi jalan, beban, angin, dsb.
  */
 
+import { AppError } from "./errors";
+
 export type MotorSizeClass = "small" | "mid" | "big";
 
 export type MotorFuelInput = {
@@ -49,10 +51,10 @@ export function defaultFuelEfficiencyKmL(motorType: MotorSizeClass): number {
 export function calculateMotorFuel(input: MotorFuelInput): MotorFuelResult {
   const tank = TANK_CAPACITY_AVG_L[input.motor_type];
   if (input.fuel_efficiency <= 0) {
-    throw new Error("Efisiensi harus lebih dari 0 km/l");
+    throw new AppError("fuel_efficiency_positive");
   }
   if (input.distance_travelled < 0) {
-    throw new Error("Jarak tidak boleh negatif");
+    throw new AppError("distance_non_negative");
   }
 
   const fuel_used = input.distance_travelled / input.fuel_efficiency;

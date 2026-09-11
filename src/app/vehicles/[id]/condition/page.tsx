@@ -15,12 +15,11 @@ import {
 } from "@/lib/part-kinds";
 import {
   computePartLife,
-  formatRemaining,
   pickLatestChangeBySlug,
-  statusLabel,
   type PartLifeResult,
   type PartLifeStatus,
 } from "@/lib/part-condition-utils";
+import { useTranslation } from "@/lib/i18n";
 import {
   engineIntervalMid,
   gearboxIntervalMid,
@@ -58,14 +57,6 @@ type ConditionEntry = {
   intervalText: string | null;
 };
 
-function intervalText(intervalKm: number | null, intervalMonths: number | null): string | null {
-  const parts: string[] = [];
-  if (intervalKm != null && intervalKm > 0) parts.push(`${intervalKm.toLocaleString("id-ID")} km`);
-  if (intervalMonths != null && intervalMonths > 0) parts.push(`${intervalMonths} bln`);
-  if (parts.length === 0) return null;
-  return `Interval ${parts.join(" / ")}`;
-}
-
 /** Urutkan: yang belum ada data → terakhir; sisanya by % ASC. */
 function sortByWorstFirst(entries: ConditionEntry[]): ConditionEntry[] {
   return [...entries].sort((a, b) => {
@@ -82,6 +73,22 @@ export default function PartConditionPage() {
   const { id } = useParams<{ id: string }>();
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
+  const { t, formatNumber } = useTranslation();
+
+  const formatIntervalText = (
+    intervalKm: number | null,
+    intervalMonths: number | null,
+  ): string | null => {
+    const parts: string[] = [];
+    if (intervalKm != null && intervalKm > 0) {
+      parts.push(t("conditionPage.intervalKm", { km: formatNumber(intervalKm) }));
+    }
+    if (intervalMonths != null && intervalMonths > 0) {
+      parts.push(t("conditionPage.intervalMonths", { n: intervalMonths }));
+    }
+    if (parts.length === 0) return null;
+    return t("conditionPage.interval", { value: parts.join(" / ") });
+  };
   const [detail, setDetail] = useState<VehicleDetail | null>(null);
   const [records, setRecords] = useState<ServiceRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -135,10 +142,10 @@ export default function PartConditionPage() {
       );
       out.push({
         key: "engine_oil",
-        label: "Oli mesin",
+        label: t("conditionPage.engineOil"),
         icon: "🛢️",
         life,
-        intervalText: intervalText(intervalKm, null),
+        intervalText: formatIntervalText(intervalKm, null),
       });
     }
 
@@ -153,10 +160,10 @@ export default function PartConditionPage() {
       );
       out.push({
         key: "gearbox_oil",
-        label: "Oli gardan",
+        label: t("conditionPage.gearOil"),
         icon: "⚙️",
         life,
-        intervalText: intervalText(intervalKm, null),
+        intervalText: formatIntervalText(intervalKm, null),
       });
     }
 
@@ -171,14 +178,14 @@ export default function PartConditionPage() {
       );
       out.push({
         key: kind.slug,
-        label: kind.display_label,
+        label: t(kind.display_label_key),
         icon: kind.icon,
         life,
-        intervalText: intervalText(kind.interval_km, kind.interval_months),
+        intervalText: formatIntervalText(kind.interval_km, kind.interval_months),
       });
     }
     return sortByWorstFirst(out);
-  }, [detail, records]);
+  }, [detail, records, t, formatNumber]);
 
   if (authLoading || !user) return null;
 
@@ -190,7 +197,7 @@ export default function PartConditionPage() {
           onClick={() => router.push(`/vehicles/${id}`)}
           className={`mb-4 rounded-lg px-1 py-0.5 text-sm font-semibold text-(--color-text-secondary) hover:bg-(--color-surface) hover:text-(--color-text) ${btnPress}`}
         >
-          ← Kembali ke detail
+          {t("conditionPage.backToDetail")}
         </button>
 
         {loading || !detail ? (
@@ -203,29 +210,28 @@ export default function PartConditionPage() {
               </span>
               <div>
                 <h1 className="text-2xl font-extrabold tracking-tight text-(--color-text)">
-                  Kondisi Part
+                  {t("conditionPage.title")}
                 </h1>
                 <p className="mt-1 text-sm text-(--color-text-secondary)">
-                  Pantau umur komponen kendaraan
+                  {t("conditionPage.subtitle")}
                 </p>
               </div>
             </header>
 
             {entries.length === 0 ? (
-              <EmptyState />
+              <EmptyState t={t} />
             ) : (
               <ul className="flex flex-col gap-3">
                 {entries.map((e) => (
                   <li key={e.key}>
-                    <PartConditionCard entry={e} />
+                    <PartConditionCard entry={e} t={t} formatNumber={formatNumber} />
                   </li>
                 ))}
               </ul>
             )}
 
             <p className="mt-2 text-[11px] leading-relaxed text-(--color-text-muted)">
-              Interval mengacu pada rekomendasi umum servis motor di Indonesia.
-              Bisa berbeda tergantung kondisi pakai &amp; manual pabrikan.
+              {t("conditionPage.disclaimer")}
             </p>
           </div>
         )}
@@ -234,7 +240,7 @@ export default function PartConditionPage() {
   );
 }
 
-function EmptyState() {
+function EmptyState({ t }: { t: ReturnType<typeof useTranslation>["t"] }) {
   return (
     <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-(--color-border) bg-(--color-surface)/80 px-6 py-12 text-center">
       <div
@@ -244,9 +250,9 @@ function EmptyState() {
         📋
       </div>
       <div>
-        <p className="text-base font-bold text-(--color-text)">Belum ada part untuk dipantau</p>
+        <p className="text-base font-bold text-(--color-text)">{t("conditionPage.emptyTitle")}</p>
         <p className="mt-1 text-sm text-(--color-text-secondary)">
-          Kategori kendaraan tidak punya part yang ter-track.
+          {t("conditionPage.emptySub")}
         </p>
       </div>
     </div>
@@ -286,11 +292,56 @@ function statusStyle(status: PartLifeStatus | null) {
   }
 }
 
-function PartConditionCard({ entry }: { entry: ConditionEntry }) {
+function formatRemainingLocalized(
+  life: PartLifeResult,
+  t: ReturnType<typeof useTranslation>["t"],
+  formatNumber: ReturnType<typeof useTranslation>["formatNumber"],
+): string {
+  if (life.last_serviced_at == null && life.last_serviced_km == null) {
+    return t("conditionPage.noServiceData");
+  }
+  if (life.driver === "km") {
+    if (life.remaining_km == null) return "—";
+    if (life.remaining_km <= 0) return t("conditionPage.timeToReplace");
+    return t("conditionPage.kmRemaining", { n: formatNumber(life.remaining_km) });
+  }
+  if (life.driver === "time") {
+    if (life.remaining_days == null) return "—";
+    if (life.remaining_days <= 0) return t("conditionPage.timeToReplace");
+    return t("conditionPage.daysRemaining", { n: formatNumber(life.remaining_days) });
+  }
+  return "—";
+}
+
+function statusLabelLocalized(
+  status: PartLifeStatus | null,
+  t: ReturnType<typeof useTranslation>["t"],
+): string {
+  switch (status) {
+    case "safe":
+      return t("conditionPage.statusSafe");
+    case "warn":
+      return t("conditionPage.statusWarn");
+    case "urgent":
+      return t("conditionPage.statusUrgent");
+    default:
+      return "—";
+  }
+}
+
+function PartConditionCard({
+  entry,
+  t,
+  formatNumber,
+}: {
+  entry: ConditionEntry;
+  t: ReturnType<typeof useTranslation>["t"];
+  formatNumber: ReturnType<typeof useTranslation>["formatNumber"];
+}) {
   const { life } = entry;
   const style = statusStyle(life.status);
   const pct = life.percent;
-  const remainingText = formatRemaining(life);
+  const remainingText = formatRemainingLocalized(life, t, formatNumber);
   const noData = life.last_serviced_at == null && life.last_serviced_km == null;
 
   return (
@@ -326,7 +377,7 @@ function PartConditionCard({ entry }: { entry: ConditionEntry }) {
                 <span
                   className={`mt-1.5 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${style.pill}`}
                 >
-                  {statusLabel(life.status)}
+                  {statusLabelLocalized(life.status, t)}
                 </span>
               )}
             </div>

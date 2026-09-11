@@ -33,12 +33,30 @@ import {
 import { pickLatestChangeBySlug } from "@/lib/part-condition-utils";
 import { PART_KIND_BY_SLUG } from "@/lib/part-kinds";
 import type { ReminderPreset, ReminderPresetSlug } from "@/lib/reminder-presets";
+import type { TranslationKey } from "@/lib/i18n";
 
 /* ──────────────────────────────────────────────────────────────────
  * Types
  * ──────────────────────────────────────────────────────────────── */
 
 export type SuggestionSource = "history" | "fallback" | "none";
+
+/**
+ * Structured note yang caller render via `t()`. `key` menunjuk ke locale
+ * entry, `vars` sudah pre-formatted string (angka sudah `.toLocaleString()`).
+ *
+ * Kalau ada `partKey`, caller wajib translate dulu (`t(partKey)`) lalu isi
+ * ke `vars.part` sebelum panggil `t(key, vars)`. Ini karena `computeXxx`
+ * adalah pure fn (bukan React), tidak punya akses ke `t()`.
+ *
+ * Legacy `note: string` (Bahasa Indonesia) tetap ada untuk backward compat.
+ */
+export type SuggestionNote = {
+  key: TranslationKey | null;
+  vars: Record<string, string | number>;
+  /** Optional i18n key untuk nama part — resolve di caller. */
+  partKey?: TranslationKey;
+};
 
 export type KmSuggestion = {
   /** False ⇒ this preset has no auto-mode at all (e.g. regular_service). */
@@ -48,6 +66,8 @@ export type KmSuggestion = {
   km: number | null;
   /** Human-readable "why this number". Empty string when `available === false`. */
   note: string;
+  /** i18n-aware version of `note`. UI React sebaiknya baca ini + `t()`. */
+  noteI18n: SuggestionNote;
 };
 
 export type TimeSuggestion = {
@@ -58,7 +78,11 @@ export type TimeSuggestion = {
   /** Days from today encoded into the suggestion (for hint text). `null` if N/A. */
   daysAhead: number | null;
   note: string;
+  noteI18n: SuggestionNote;
 };
+
+/** Konvenien empty note. */
+const EMPTY_NOTE: SuggestionNote = { key: null, vars: {} };
 
 export type SuggestionInputs = {
   preset: ReminderPreset;
@@ -112,14 +136,14 @@ export function computeKmSuggestion({
 }: SuggestionInputs): KmSuggestion {
   // Time-only preset — no KM auto-mode at all.
   if (preset.km <= 0) {
-    return { available: false, source: "none", km: null, note: "" };
+    return { available: false, source: "none", km: null, note: "", noteI18n: EMPTY_NOTE };
   }
 
   // Generic / non-tracked preset — keep auto OFF so the UI shows Manual only.
   // (regular_service is intentionally absent from KM_PART_SLUGS and isn't
   // oil_change.)
   if (preset.slug !== "oil_change" && !KM_PART_SLUGS[preset.slug]) {
-    return { available: false, source: "none", km: null, note: "" };
+    return { available: false, source: "none", km: null, note: "", noteI18n: EMPTY_NOTE };
   }
 
   // ── oil_change: prefer category interval (real per-merk data) ─────
@@ -127,9 +151,11 @@ export function computeKmSuggestion({
     const lastEngine = pickLatestEngineOil([...records]);
     const intervalFromCat = category ? engineIntervalMid(category) : null;
     const interval = intervalFromCat ?? preset.km;
+    const intervalStr = interval.toLocaleString("id-ID");
 
     if (lastEngine) {
       const target = lastEngine.km + interval;
+      const lastKmStr = lastEngine.km.toLocaleString("id-ID");
       // If the *historical* target is already in the past, the user is
       // overdue. Snapping to current+interval gives them a forward-looking
       // reminder rather than something already-due-by-design.
@@ -138,14 +164,22 @@ export function computeKmSuggestion({
           available: true,
           source: "history",
           km: currentKm + interval,
-          note: `Sudah lewat — set ulang ${interval.toLocaleString("id-ID")} km dari sekarang`,
+          note: `Sudah lewat — set ulang ${intervalStr} km dari sekarang`,
+          noteI18n: {
+            key: "reminderSuggestion.oilChangeOverdue",
+            vars: { interval: intervalStr },
+          },
         };
       }
       return {
         available: true,
         source: "history",
         km: target,
-        note: `Oli mesin terakhir di ${lastEngine.km.toLocaleString("id-ID")} km · interval ${interval.toLocaleString("id-ID")} km`,
+        note: `Oli mesin terakhir di ${lastKmStr} km · interval ${intervalStr} km`,
+        noteI18n: {
+          key: "reminderSuggestion.oilChangeHistory",
+          vars: { km: lastKmStr, interval: intervalStr },
+        },
       };
     }
     return {
@@ -153,13 +187,14 @@ export function computeKmSuggestion({
       source: "fallback",
       km: currentKm + interval,
       note: "Belum ada riwayat ganti oli — pakai estimasi dari KM saat ini",
+      noteI18n: { key: "reminderSuggestion.oilChangeFallback", vars: {} },
     };
   }
 
   // ── cvt / brake: derive from part-condition history ──────────────
   const slugs = KM_PART_SLUGS[preset.slug];
   if (!slugs) {
-    return { available: false, source: "none", km: null, note: "" };
+    return { available: false, source: "none", km: null, note: "", noteI18n: EMPTY_NOTE };
   }
 
   // Pick the most recent change across all candidate slugs. Each kind has
@@ -181,23 +216,37 @@ export function computeKmSuggestion({
     : null;
   const interval =
     intervalFromKind && intervalFromKind > 0 ? intervalFromKind : preset.km;
+  const intervalStr = interval.toLocaleString("id-ID");
 
   if (latest) {
     const target = latest.km + interval;
-    const partLabel = PART_KIND_BY_SLUG[latest.slug]?.display_label ?? preset.label;
+    const partKind = PART_KIND_BY_SLUG[latest.slug];
+    const partLabel = partKind?.display_label ?? preset.label;
+    const partKey = partKind?.display_label_key;
+    const lastKmStr = latest.km.toLocaleString("id-ID");
     if (target <= currentKm) {
       return {
         available: true,
         source: "history",
         km: currentKm + interval,
-        note: `${partLabel} sudah lewat interval — set ulang ${interval.toLocaleString("id-ID")} km dari sekarang`,
+        note: `${partLabel} sudah lewat interval — set ulang ${intervalStr} km dari sekarang`,
+        noteI18n: {
+          key: "reminderSuggestion.partOverdue",
+          vars: { part: partLabel, interval: intervalStr },
+          partKey,
+        },
       };
     }
     return {
       available: true,
       source: "history",
       km: target,
-      note: `${partLabel} terakhir di ${latest.km.toLocaleString("id-ID")} km · interval ${interval.toLocaleString("id-ID")} km`,
+      note: `${partLabel} terakhir di ${lastKmStr} km · interval ${intervalStr} km`,
+      noteI18n: {
+        key: "reminderSuggestion.partHistory",
+        vars: { part: partLabel, km: lastKmStr, interval: intervalStr },
+        partKey,
+      },
     };
   }
 
@@ -206,6 +255,11 @@ export function computeKmSuggestion({
     source: "fallback",
     km: currentKm + interval,
     note: `Belum ada riwayat ${preset.label.toLowerCase()} — pakai estimasi dari KM saat ini`,
+    noteI18n: {
+      key: "reminderSuggestion.partFallback",
+      vars: { part: preset.label.toLowerCase() },
+      partKey: preset.labelKey,
+    },
   };
 }
 
@@ -224,7 +278,14 @@ export function computeTimeSuggestion({
   now = new Date(),
 }: SuggestionInputs): TimeSuggestion {
   if (preset.slug !== "battery") {
-    return { available: false, source: "none", iso: null, daysAhead: null, note: "" };
+    return {
+      available: false,
+      source: "none",
+      iso: null,
+      daysAhead: null,
+      note: "",
+      noteI18n: EMPTY_NOTE,
+    };
   }
 
   const intervalMonths = PART_KIND_BY_SLUG.battery?.interval_months ?? null;
@@ -232,6 +293,7 @@ export function computeTimeSuggestion({
     intervalMonths && intervalMonths > 0
       ? Math.round((intervalMonths * 365.25) / 12)
       : preset.days;
+  const months = intervalMonths ?? Math.round(intervalDays / 30);
 
   const last = pickLatestChangeBySlug([...records], "battery");
   if (last) {
@@ -247,7 +309,11 @@ export function computeTimeSuggestion({
         source: "history",
         iso: isoDaysAhead(intervalDays, now),
         daysAhead: intervalDays,
-        note: `Aki sudah lewat masa pakai — set ulang ${intervalMonths ?? Math.round(intervalDays / 30)} bulan dari sekarang`,
+        note: `Aki sudah lewat masa pakai — set ulang ${months} bulan dari sekarang`,
+        noteI18n: {
+          key: "reminderSuggestion.batteryOverdue",
+          vars: { months },
+        },
       };
     }
     nextDate.setHours(9, 0, 0, 0);
@@ -257,7 +323,11 @@ export function computeTimeSuggestion({
       source: "history",
       iso: nextDate.toISOString(),
       daysAhead: days,
-      note: `Aki terakhir diganti ${last.date} · masa pakai ~${intervalMonths ?? Math.round(intervalDays / 30)} bulan`,
+      note: `Aki terakhir diganti ${last.date} · masa pakai ~${months} bulan`,
+      noteI18n: {
+        key: "reminderSuggestion.batteryHistory",
+        vars: { date: last.date, months },
+      },
     };
   }
 
@@ -267,6 +337,7 @@ export function computeTimeSuggestion({
     iso: isoDaysAhead(intervalDays, now),
     daysAhead: intervalDays,
     note: "Belum ada riwayat ganti aki — pakai estimasi dari hari ini",
+    noteI18n: { key: "reminderSuggestion.batteryFallback", vars: {} },
   };
 }
 

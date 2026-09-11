@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { prepareOdometerScan, type OdometerScanPreview } from "@/lib/odometer-image";
 import OdometerScanFlow from "@/components/OdometerScanModal";
+import { useTranslation } from "@/lib/i18n";
 import { toast } from "sonner";
 
 type OdometerScanButtonProps = {
@@ -57,6 +58,7 @@ export default function OdometerScanButton({
   variant = "full",
   className = "",
 }: OdometerScanButtonProps) {
+  const { t, formatNumber } = useTranslation();
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
@@ -70,7 +72,7 @@ export default function OdometerScanButton({
       const scanPreview = await prepareOdometerScan(file);
       setPreview(scanPreview);
     } catch {
-      toast.error("Gagal memuat foto. Silakan coba lagi.");
+      toast.error(t("odometerScanButton.loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -88,7 +90,7 @@ export default function OdometerScanButton({
     onDetected(km);
     const n = parseInt(km, 10);
     if (Number.isFinite(n)) {
-      toast.success(`Odometer: ${n.toLocaleString("id-ID")} km`);
+      toast.success(t("odometerScanButton.detected", { km: formatNumber(n) }));
     }
   };
 
@@ -154,7 +156,7 @@ export default function OdometerScanButton({
             ) : (
               <>
                 <CameraIcon className="h-5 w-5" />
-                <span>Kamera</span>
+                <span>{t("odometerScanButton.camera")}</span>
               </>
             )}
           </button>
@@ -169,7 +171,7 @@ export default function OdometerScanButton({
             ) : (
               <>
                 <GalleryIcon className="h-5 w-5" />
-                <span>Galeri</span>
+                <span>{t("odometerScanButton.gallery")}</span>
               </>
             )}
           </button>
@@ -185,7 +187,7 @@ export default function OdometerScanButton({
         <button
           type="button"
           disabled={isDisabled}
-          aria-label={loading ? "Memuat foto…" : "Scan odometer dari kamera"}
+          aria-label={loading ? t("odometerScanButton.loadingPhoto") : t("odometerScanButton.scanCameraAria")}
           onClick={() => cameraInputRef.current?.click()}
           className="flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-2xl border border-(--color-border) bg-(--color-surface) text-(--color-text-secondary) transition-all hover:border-(--color-primary)/40 hover:text-(--color-primary) active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
         >
@@ -198,7 +200,7 @@ export default function OdometerScanButton({
         <button
           type="button"
           disabled={isDisabled}
-          aria-label="Scan odometer dari galeri"
+          aria-label={t("odometerScanButton.scanGalleryAria")}
           onClick={() => galleryInputRef.current?.click()}
           className="flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-2xl border border-(--color-border) bg-(--color-surface) text-(--color-text-secondary) transition-all hover:border-(--color-primary)/40 hover:text-(--color-primary) active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
         >

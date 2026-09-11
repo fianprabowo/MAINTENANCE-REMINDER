@@ -14,7 +14,7 @@ import type { MotorcycleCategory, MotorcycleModel } from "@/lib/types";
 import CustomSelect from "@/components/CustomSelect";
 import OdometerScanButton from "@/components/OdometerScanButton";
 import { toast } from "sonner";
-import { useTranslation } from "@/lib/i18n";
+import { useAppErrorMessage, useTranslation } from "@/lib/i18n";
 
 // ---------------------------------------------------------------------------
 // Tipe Motor: drives the oil interval lookup (via `motorcycle_categories.slug`).
@@ -99,6 +99,7 @@ export default function AddVehiclePage() {
   const { setSelectedVehicleId } = useSelectedVehicle();
   const router = useRouter();
   const { t } = useTranslation();
+  const describeAppError = useAppErrorMessage();
 
   // Options di-generate di dalam komponen agar label ikut locale aktif.
   const TIPE_MOTOR_OPTIONS = useMemo(
@@ -351,7 +352,7 @@ export default function AddVehiclePage() {
       setSelectedVehicleId(vehicle.id);
       router.push("/dashboard");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : t("vehiclesAdd.failedToast"));
+      toast.error(describeAppError(err, t("vehiclesAdd.failedToast")));
     } finally {
       setLoading(false);
     }

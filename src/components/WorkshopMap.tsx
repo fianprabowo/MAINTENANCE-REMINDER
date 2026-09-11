@@ -4,6 +4,7 @@ import { useEffect, useMemo } from "react";
 import { MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { useTranslation } from "@/lib/i18n";
 
 const DEFAULT_CENTER: [number, number] = [-6.2088, 106.8456];
 
@@ -38,6 +39,7 @@ export default function WorkshopMap({
   userLng: number | null;
   height?: number;
 }) {
+  const { t } = useTranslation();
   const center: [number, number] = useMemo(
     () => (userLat != null && userLng != null ? [userLat, userLng] : DEFAULT_CENTER),
     [userLat, userLng],
@@ -64,7 +66,7 @@ export default function WorkshopMap({
         {userLat != null && userLng != null && (
           <Marker position={[userLat, userLng]}>
             <Popup>
-              <span className="text-sm font-semibold">Your location</span>
+              <span className="text-sm font-semibold">{t("workshopMap.yourLocation")}</span>
             </Popup>
           </Marker>
         )}

@@ -1,9 +1,12 @@
 "use client";
 
+import { useTranslation } from "@/lib/i18n";
+
 /**
  * Semicircular fuel readout (speedometer-style): arc + needle + E/F ticks.
  */
 export default function FuelGauge({ level }: { level: number }) {
+  const { t } = useTranslation();
   const p = Math.min(100, Math.max(0, level));
   const cx = 110;
   const cy = 108;
@@ -13,7 +16,7 @@ export default function FuelGauge({ level }: { level: number }) {
   const ny = cy - r * Math.sin(angle);
 
   return (
-    <div className="relative w-full select-none" aria-label={`Bensin ${p} persen`}>
+    <div className="relative w-full select-none" aria-label={t("fuelGauge.ariaLevel", { percent: p })}>
       <svg viewBox="0 0 220 132" className="mx-auto block h-[9.5rem] w-full max-w-[280px]" aria-hidden>
         <defs>
           <linearGradient id="fuelGaugeArc" x1="0%" y1="0%" x2="100%" y2="0%">

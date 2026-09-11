@@ -29,6 +29,7 @@ import {
 } from "react";
 import en from "./locales/en";
 import id from "./locales/id";
+import { AppError } from "./errors";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -238,6 +239,40 @@ export function useI18n(): I18nContextValue {
 export function useTranslation() {
   const { t, locale, setLocale, formatNumber, formatDate } = useI18n();
   return { t, locale, setLocale, formatNumber, formatDate };
+}
+
+/**
+ * Hook helper untuk terjemahkan `AppError` (dari layer service) ke pesan
+ * ramah user. Pattern pemakaian di UI:
+ *
+ *   const describeError = useAppErrorMessage();
+ *   try { ... } catch (err) {
+ *     toast.error(describeError(err, t("page.saveFailed")));
+ *   }
+ *
+ * - Kalau `err` adalah `AppError`, kembalikan `t(\`appError.${err.code}\`, params)`
+ *   dengan params numeric pre-formatted lewat `formatNumber` (locale-aware).
+ * - Kalau bukan, kembalikan `fallback` — sengaja tidak render `err.message`
+ *   mentah untuk menghindari leak string debug atau bahasa yang tidak
+ *   sesuai locale user.
+ */
+export function useAppErrorMessage() {
+  const { t, formatNumber } = useI18n();
+  return useCallback(
+    (err: unknown, fallback: string): string => {
+      if (err instanceof AppError) {
+        const key = `appError.${err.code}` as TranslationKey;
+        const params: Record<string, string | number> = { ...err.params };
+        for (const k of Object.keys(params)) {
+          const v = params[k];
+          if (typeof v === "number") params[k] = formatNumber(v);
+        }
+        return t(key, params);
+      }
+      return fallback;
+    },
+    [t, formatNumber],
+  );
 }
 
 /**

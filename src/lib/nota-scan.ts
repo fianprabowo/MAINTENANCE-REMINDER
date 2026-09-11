@@ -6,6 +6,32 @@ const JPEG_QUALITY = 0.85;
 /** Soft cap — base64 + Gemini request; PDF nota biasanya jauh di bawah ini. */
 const MAX_BYTES = 8 * 1024 * 1024;
 
+/**
+ * Stable error codes untuk nota-scan pipeline. UI catch `NotaScanError`
+ * lalu translate via `t(\`notaScanError.${code}\`)`. Menghindari leak
+ * Indonesian debug strings ke user yang lagi di locale English.
+ */
+export type NotaScanErrorCode =
+  | "file_read"
+  | "image_load"
+  | "canvas_unavailable"
+  | "file_too_large"
+  | "server_error"
+  | "invalid_response"
+  | "no_items_found";
+
+export class NotaScanError extends Error {
+  readonly code: NotaScanErrorCode;
+  readonly upstream: string | null;
+
+  constructor(code: NotaScanErrorCode, upstream: string | null = null) {
+    super(`nota scan failed: ${code}${upstream ? ` (${upstream})` : ""}`);
+    this.name = "NotaScanError";
+    this.code = code;
+    this.upstream = upstream;
+  }
+}
+
 export type NotaUploadPayload = {
   dataUrl: string;
   mimeType: string;
@@ -25,9 +51,9 @@ function blobToDataUrl(blob: Blob): Promise<string> {
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result === "string") resolve(reader.result);
-      else reject(new Error("Gagal membaca file"));
+      else reject(new NotaScanError("file_read"));
     };
-    reader.onerror = () => reject(new Error("Gagal membaca file"));
+    reader.onerror = () => reject(new NotaScanError("file_read"));
     reader.readAsDataURL(blob);
   });
 }
@@ -39,7 +65,7 @@ async function loadNotaCanvas(file: File | Blob): Promise<HTMLCanvasElement> {
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
       const el = new Image();
       el.onload = () => resolve(el);
-      el.onerror = () => reject(new Error("Gagal memuat gambar"));
+      el.onerror = () => reject(new NotaScanError("image_load"));
       el.src = url;
     });
 
@@ -51,7 +77,7 @@ async function loadNotaCanvas(file: File | Blob): Promise<HTMLCanvasElement> {
     canvas.width = w;
     canvas.height = h;
     const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("Canvas tidak tersedia");
+    if (!ctx) throw new NotaScanError("canvas_unavailable");
     ctx.drawImage(img, 0, 0, w, h);
     return canvas;
   } finally {
@@ -61,7 +87,7 @@ async function loadNotaCanvas(file: File | Blob): Promise<HTMLCanvasElement> {
 
 export async function prepareNotaUpload(file: File | Blob): Promise<NotaUploadPayload> {
   if (file.size > MAX_BYTES) {
-    throw new Error("File terlalu besar. Maksimal 8 MB.");
+    throw new NotaScanError("file_too_large");
   }
 
   if (isPdfFile(file)) {
@@ -93,16 +119,16 @@ export async function scanNotaFromFile(file: File | Blob): Promise<NotaScanResul
   };
 
   if (!res.ok) {
-    throw new Error(data.error ?? "Gagal membaca nota");
+    throw new NotaScanError("server_error", data.error ?? null);
   }
 
   if (!Array.isArray(data.items)) {
-    throw new Error("Respons nota tidak valid");
+    throw new NotaScanError("invalid_response");
   }
 
   const normalized = parseNotaScanJson(JSON.stringify(data));
   if (!normalized || normalized.items.length === 0) {
-    throw new Error("Tidak ada baris part yang terbaca dari nota");
+    throw new NotaScanError("no_items_found");
   }
   return normalized;
 }

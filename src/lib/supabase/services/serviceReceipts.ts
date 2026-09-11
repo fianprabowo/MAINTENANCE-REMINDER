@@ -1,5 +1,6 @@
 import { supabase } from "../client";
 import { requireUser } from "../auth-helpers";
+import { AppError } from "@/lib/errors";
 
 export const SERVICE_RECEIPTS_BUCKET = "service-receipts";
 
@@ -85,13 +86,16 @@ export async function createServiceReceiptSignedUrl(
   expiresInSec = SIGNED_URL_TTL_SEC,
 ): Promise<string> {
   const trimmed = path.trim();
-  if (!trimmed) throw new Error("Path nota kosong");
+  if (!trimmed) throw new AppError("empty_receipt_path");
   await requireUser();
   const { data, error } = await supabase.storage
     .from(SERVICE_RECEIPTS_BUCKET)
     .createSignedUrl(trimmed, expiresInSec);
   if (error || !data?.signedUrl) {
-    throw new Error(error?.message || "Gagal membuat link nota");
+    // `error?.message` biasanya English dari Supabase — aman di-render as-is
+    // sebagai debug info kalau ada, else pakai code yang bisa di-translate.
+    if (error?.message) throw new Error(error.message);
+    throw new AppError("receipt_signed_url_failed");
   }
   return data.signedUrl;
 }
@@ -103,7 +107,7 @@ export async function updateServiceRecordReceiptPath(
 ): Promise<void> {
   const user = await requireUser();
   const { data: v } = await supabase.from("vehicles").select("user_id").eq("id", vehicleId).maybeSingle();
-  if (!v || v.user_id !== user.id) throw new Error("Kendaraan tidak ditemukan");
+  if (!v || v.user_id !== user.id) throw new AppError("vehicle_not_found");
 
   const { error } = await supabase
     .from("service_records")

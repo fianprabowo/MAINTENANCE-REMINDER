@@ -1,39 +1,43 @@
 "use client";
 
+import { useTranslation } from "@/lib/i18n";
+
 type Zone = "good" | "warn" | "bad";
 
 // Status thresholds per spec:
-//   ≥ 50%  → Aman
-//   20–49% → Waspada
-//   < 20%  → Segera isi bensin
+//   ≥ 50%  → Safe (Aman)
+//   20–49% → Caution (Waspada)
+//   < 20%  → Urgent (Segera)
 function zoneFromFuel(p: number): Zone {
   if (p >= 50) return "good";
   if (p >= 20) return "warn";
   return "bad";
 }
 
-const zoneUi: Record<Zone, { stroke: string; label: string; sub: string }> = {
-  good: {
-    stroke: "stroke-emerald-500",
-    label: "Aman",
-    sub: "Masih nyaman untuk jalan",
-  },
-  warn: {
-    stroke: "stroke-amber-500",
-    label: "Waspada",
-    sub: "Pertimbangkan isi ulang",
-  },
-  bad: {
-    stroke: "stroke-red-500",
-    label: "Segera",
-    sub: "Segera isi bensin",
-  },
-};
-
 /** Hero ring untuk level bensin (mobil / motor tanpa data interval oli di hero). */
 export default function FuelLevelHero({ level }: { level: number }) {
+  const { t } = useTranslation();
   const p = Math.min(100, Math.max(0, level));
   const zone = zoneFromFuel(p);
+  // Kumpulan token per-zone di dalam body component (bukan module-level
+  // static) supaya string lokalisasi ter-refresh saat locale switch.
+  const zoneUi: Record<Zone, { stroke: string; label: string; sub: string }> = {
+    good: {
+      stroke: "stroke-emerald-500",
+      label: t("fuelLevelHero.safeLabel"),
+      sub: t("fuelLevelHero.safeSub"),
+    },
+    warn: {
+      stroke: "stroke-amber-500",
+      label: t("fuelLevelHero.warnLabel"),
+      sub: t("fuelLevelHero.warnSub"),
+    },
+    bad: {
+      stroke: "stroke-red-500",
+      label: t("fuelLevelHero.badLabel"),
+      sub: t("fuelLevelHero.badSub"),
+    },
+  };
   const ui = zoneUi[zone];
   const r = 52;
   const c = 58;
@@ -43,10 +47,10 @@ export default function FuelLevelHero({ level }: { level: number }) {
   return (
     <div
       className="rounded-2xl border border-(--color-border)/70 bg-(--color-surface) p-6 shadow-md"
-      aria-label={`Level bensin ${p} persen`}
+      aria-label={t("fuelLevelHero.ariaLevel", { percent: p })}
     >
       <p className="text-center text-[11px] font-bold uppercase tracking-wider text-(--color-text-muted)">
-        Level bensin
+        {t("fuelLevelHero.title")}
       </p>
 
       <div className="relative mx-auto mt-4 flex h-[9.5rem] w-[9.5rem] items-center justify-center">

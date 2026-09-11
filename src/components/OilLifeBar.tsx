@@ -1,11 +1,36 @@
 "use client";
 
+import { useTranslation, type TranslationKey } from "@/lib/i18n";
+
 export type OilLifeBarVariant = "engine" | "gearbox";
 
-function zoneStyle(p: number): { fill: string; label: string; desc: string } {
-  if (p >= 60) return { fill: "bg-emerald-500", label: "Aman", desc: "Masih dalam zona interval referensi." };
-  if (p >= 30) return { fill: "bg-amber-500", label: "Waspada", desc: "Rencanakan ganti oli segera." };
-  return { fill: "bg-red-500", label: "Segera ganti", desc: "Interval sudah mendekati atau melewati batas." };
+/**
+ * Zone tokens — untuk label/desc yang butuh terjemahan kita return `key`
+ * bukan string mentah, biar caller (React component) yang translate via `t()`
+ * di render-time. Ini mengunci perilaku "locale switch langsung refresh".
+ */
+function zoneStyle(p: number): {
+  fill: string;
+  labelKey: TranslationKey;
+  descKey: TranslationKey;
+} {
+  if (p >= 60)
+    return {
+      fill: "bg-emerald-500",
+      labelKey: "oilLifeBar.statusSafe",
+      descKey: "oilLifeBar.descSafe",
+    };
+  if (p >= 30)
+    return {
+      fill: "bg-amber-500",
+      labelKey: "oilLifeBar.statusWarn",
+      descKey: "oilLifeBar.descWarn",
+    };
+  return {
+    fill: "bg-red-500",
+    labelKey: "oilLifeBar.statusUrgent",
+    descKey: "oilLifeBar.descUrgent",
+  };
 }
 
 function VariantIcon({ variant }: { variant: OilLifeBarVariant }) {
@@ -41,6 +66,7 @@ export default function OilLifeBar({
   /** Teks kecil di bawah (mis. “Tap untuk detail”) */
   insightHint?: string;
 }) {
+  const { t } = useTranslation();
   const p = percent == null ? null : Math.max(0, Math.min(100, percent));
   const zone = p == null ? null : zoneStyle(p);
   const compact = density === "compact";
@@ -76,7 +102,7 @@ export default function OilLifeBar({
           <p className="text-[11px] font-bold uppercase tracking-wider text-(--color-text-muted)">{label}</p>
           {!compact && (
             <p className="mt-0.5 text-base font-extrabold tracking-tight text-(--color-text)">
-              Estimasi sisa interval
+              {t("oilLifeBar.subTitle")}
             </p>
           )}
           {sublabel && (
@@ -103,7 +129,7 @@ export default function OilLifeBar({
                 <p
                   className={`mt-1 text-[11px] font-bold ${p >= 60 ? "text-emerald-600 dark:text-emerald-400" : p >= 30 ? "text-amber-700 dark:text-amber-400" : "text-red-600 dark:text-red-400"}`}
                 >
-                  {zone.label}
+                  {t(zone.labelKey)}
                 </p>
               )}
             </>
@@ -123,14 +149,14 @@ export default function OilLifeBar({
           )}
         </div>
         <div className="mt-2 flex justify-between gap-2 text-[10px] font-semibold text-(--color-text-muted)">
-          <span>Perlu ganti</span>
-          <span>Baru ganti</span>
+          <span>{t("oilLifeBar.needsChange")}</span>
+          <span>{t("oilLifeBar.justChanged")}</span>
         </div>
       </div>
 
       {!compact && p != null && zone && (
         <p className="mt-4 rounded-2xl bg-(--color-bg)/60 px-3 py-2.5 text-xs leading-relaxed text-(--color-text-secondary) ring-1 ring-(--color-border)/40">
-          {zone.desc}
+          {t(zone.descKey)}
         </p>
       )}
 
@@ -142,15 +168,15 @@ export default function OilLifeBar({
         <div className="mt-4 flex flex-wrap gap-2">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/12 px-2.5 py-1 text-[10px] font-semibold text-emerald-800 dark:text-emerald-300/90">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            ≥60% aman
+            {t("oilLifeBar.legendSafe")}
           </span>
           <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-2.5 py-1 text-[10px] font-semibold text-amber-900 dark:text-amber-200/85">
             <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-            30–59% waspada
+            {t("oilLifeBar.legendWarn")}
           </span>
           <span className="inline-flex items-center gap-1.5 rounded-full bg-red-500/12 px-2.5 py-1 text-[10px] font-semibold text-red-800 dark:text-red-300/90">
             <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
-            {"<"}30% segera
+            {t("oilLifeBar.legendUrgent")}
           </span>
         </div>
       )}

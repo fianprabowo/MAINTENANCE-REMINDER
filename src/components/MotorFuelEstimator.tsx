@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import type { MotorSizeClass } from "@/lib/motor-fuel-calc";
 import { recordVehicleFuelFill } from "@/lib/supabase";
+import { useAppErrorMessage, useTranslation } from "@/lib/i18n";
 
 /* ──────────────────────────────────────────────────────────────────
  * Format / parse helpers
@@ -31,9 +32,6 @@ function localYmdToIso(ymd: string): string {
   }
   return new Date(y, mo - 1, day, 12, 0, 0, 0).toISOString();
 }
-
-const formatKm = (n: number | null | undefined): string =>
-  n != null ? `${n.toLocaleString("id-ID")} km` : "—";
 
 /* ──────────────────────────────────────────────────────────────────
  * Style tokens — netral; warna dipakai hanya untuk primary CTA
@@ -74,6 +72,11 @@ export default function MotorFuelEstimator({
   onApplied,
   onRequestUpdateMileage,
 }: Props) {
+  const { t, formatNumber } = useTranslation();
+  const describeAppError = useAppErrorMessage();
+  const formatKm = (n: number | null | undefined): string =>
+    n != null ? `${formatNumber(n)} km` : "—";
+
   /* Manual input state */
   const [manualKm, setManualKm] = useState("");
   const [manualDate, setManualDate] = useState(todayYmd);
@@ -103,46 +106,46 @@ export default function MotorFuelEstimator({
 
   const handleFillNow = useCallback(async () => {
     if (latestKm == null) {
-      toast.error("Belum ada KM odometer. Catat KM dulu.");
+      toast.error(t("motorFuelEstimator.toastNoKm"));
       onRequestUpdateMileage?.();
       return;
     }
     setFillNowBusy(true);
     try {
       await recordFill(latestKm);
-      toast.success("Berhasil disimpan");
+      toast.success(t("motorFuelEstimator.toastSaved"));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Gagal menyimpan");
+      toast.error(describeAppError(err, t("motorFuelEstimator.toastSaveFailed")));
     } finally {
       setFillNowBusy(false);
     }
-  }, [latestKm, recordFill, onRequestUpdateMileage]);
+  }, [latestKm, recordFill, onRequestUpdateMileage, t, describeAppError]);
 
   const handleManualSave = useCallback(async () => {
     const km = parseInt(manualKm, 10);
     if (!Number.isFinite(km) || km < 0) {
-      toast.error("Masukkan KM saat isi (angka ≥ 0)");
+      toast.error(t("motorFuelEstimator.toastEnterKm"));
       return;
     }
     if (latestKm != null && km > latestKm) {
-      toast.error("KM saat isi tidak boleh lebih besar dari odometer terkini");
+      toast.error(t("motorFuelEstimator.toastKmTooHigh"));
       return;
     }
     if (!manualDate.trim()) {
-      toast.error("Pilih tanggal isi");
+      toast.error(t("motorFuelEstimator.toastSelectDate"));
       return;
     }
     setManualBusy(true);
     try {
       await recordFill(km, localYmdToIso(manualDate));
-      toast.success("Berhasil disimpan");
+      toast.success(t("motorFuelEstimator.toastSaved"));
       setManualKm("");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Gagal menyimpan");
+      toast.error(describeAppError(err, t("motorFuelEstimator.toastSaveFailed")));
     } finally {
       setManualBusy(false);
     }
-  }, [manualKm, manualDate, latestKm, recordFill]);
+  }, [manualKm, manualDate, latestKm, recordFill, t, describeAppError]);
 
   const anyBusy = fillNowBusy || manualBusy;
   const manualValid = manualKm.trim().length > 0 && manualDate.trim().length > 0;
@@ -154,16 +157,16 @@ export default function MotorFuelEstimator({
   return (
     <div className="rounded-xl border border-(--color-border)/60 bg-(--color-surface) p-4 shadow-sm">
       {/* Title — tanpa paragraf panjang */}
-      <p className={LABEL}>Estimasi bensin</p>
+      <p className={LABEL}>{t("motorFuelEstimator.title")}</p>
       <p className="mt-1 text-xs text-(--color-text-secondary)">
-        Gunakan untuk menghitung konsumsi bensin
+        {t("motorFuelEstimator.subtitle")}
       </p>
 
       {/* ── Ringkasan compact — single mini-card, hanya 2 metrik ── */}
       <dl className="mt-4 grid grid-cols-2 gap-3 rounded-xl bg-(--color-surface-alt)/60 p-3 text-sm">
         <div>
           <dt className="text-[10px] font-semibold uppercase tracking-wide text-(--color-text-muted)">
-            KM sekarang
+            {t("motorFuelEstimator.currentKm")}
           </dt>
           <dd className="mt-0.5 font-bold tabular-nums text-(--color-text)">
             {formatKm(latestKm)}
@@ -171,7 +174,7 @@ export default function MotorFuelEstimator({
         </div>
         <div>
           <dt className="text-[10px] font-semibold uppercase tracking-wide text-(--color-text-muted)">
-            Terakhir isi
+            {t("motorFuelEstimator.lastFill")}
           </dt>
           <dd className="mt-0.5 font-bold tabular-nums text-(--color-text)">
             {formatKm(lastFuelFillMileage)}
@@ -186,12 +189,12 @@ export default function MotorFuelEstimator({
           onClick={onRequestUpdateMileage}
           className="mt-3 text-xs font-semibold text-(--color-primary) underline-offset-2 transition-colors hover:underline"
         >
-          + Tambah KM odometer
+          {t("motorFuelEstimator.addKm")}
         </button>
       ) : null}
       {odometerAheadOfFill ? (
         <p className="mt-3 text-[11px] font-medium text-amber-700 dark:text-amber-300">
-          Odometer terkini lebih kecil dari KM isi terakhir — periksa riwayat KM atau catatan isi.
+          {t("motorFuelEstimator.odometerWarning")}
         </p>
       ) : null}
 
@@ -203,22 +206,22 @@ export default function MotorFuelEstimator({
           disabled={anyBusy}
           className={PRIMARY_BTN}
         >
-          {fillNowBusy ? "Menyimpan…" : "Isi penuh sekarang"}
+          {fillNowBusy ? t("motorFuelEstimator.saving") : t("motorFuelEstimator.fillNow")}
         </button>
         <p className="mt-1.5 text-center text-[11px] text-(--color-text-muted)">
-          Simpan KM sekarang & set tangki 100%
+          {t("motorFuelEstimator.fillNowHint")}
         </p>
       </div>
 
       {/* ── Manual Input — inline, tidak nge-card berlapis ───── */}
       <div className="mt-5">
         <p className="text-xs font-semibold text-(--color-text-secondary)">
-          Atau isi manual
+          {t("motorFuelEstimator.manualSection")}
         </p>
         <div className="mt-2 grid gap-3 sm:grid-cols-2">
           <div>
             <label htmlFor="fuel-manual-km" className={LABEL}>
-              KM saat isi
+              {t("motorFuelEstimator.kmAtFill")}
             </label>
             <input
               id="fuel-manual-km"
@@ -227,13 +230,13 @@ export default function MotorFuelEstimator({
               value={manualKm}
               onChange={(e) => setManualKm(digitsOnly(e.target.value, 9))}
               className={`${INPUT} mt-1`}
-              placeholder="Contoh: 12400"
+              placeholder={t("motorFuelEstimator.kmPlaceholder")}
               disabled={anyBusy}
             />
           </div>
           <div>
             <label htmlFor="fuel-manual-date" className={LABEL}>
-              Tanggal
+              {t("motorFuelEstimator.date")}
             </label>
             <input
               id="fuel-manual-date"
@@ -251,7 +254,7 @@ export default function MotorFuelEstimator({
           disabled={!manualValid || anyBusy}
           className={`${SECONDARY_BTN} mt-3`}
         >
-          {manualBusy ? "Menyimpan…" : "Simpan isi bensin"}
+          {manualBusy ? t("motorFuelEstimator.saving") : t("motorFuelEstimator.saveFill")}
         </button>
       </div>
     </div>

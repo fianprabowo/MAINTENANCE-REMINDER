@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useTranslation } from "@/lib/i18n";
 
 export type ServiceNotaPhase = "idle" | "processing" | "success" | "error" | "empty";
 
@@ -70,6 +71,7 @@ export default function ServiceNotaHero({
   onClearFile,
   onRetry,
 }: ServiceNotaHeroProps) {
+  const { t } = useTranslation();
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -150,7 +152,7 @@ export default function ServiceNotaHero({
             <button
               type="button"
               className="absolute inset-0 bg-black/45"
-              aria-label="Tutup"
+              aria-label={t("common.close")}
               onClick={() => setPickerOpen(false)}
             />
             <div className="relative z-10 w-full max-w-md rounded-t-3xl bg-(--color-bg) p-5 pb-[max(1.25rem,calc(env(safe-area-inset-bottom,0px)+1rem))] shadow-2xl sm:mx-4 sm:rounded-3xl">
@@ -160,18 +162,17 @@ export default function ServiceNotaHero({
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h3 id="nota-upload-title" className="text-lg font-extrabold text-(--color-text)">
-                    Upload service receipt
+                    {t("serviceNotaHero.uploadTitle")}
                   </h3>
                   <p className="mt-1 text-xs leading-relaxed text-(--color-text-secondary)">
-                    Upload a service receipt and AI will automatically extract the service items,
-                    quantity, prices and service date.
+                    {t("serviceNotaHero.uploadSubtitle")}
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setPickerOpen(false)}
                   className="-mr-1 -mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-(--color-text-muted) hover:bg-(--color-surface) hover:text-(--color-text)"
-                  aria-label="Tutup"
+                  aria-label={t("common.close")}
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5" aria-hidden>
                     <path d="M18 6 6 18M6 6l12 12" />
@@ -183,9 +184,9 @@ export default function ServiceNotaHero({
                 <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-(--color-primary) text-white shadow-lg shadow-(--color-primary)/30">
                   <FileIcon className="h-8 w-8" />
                 </div>
-                <p className="text-sm font-bold text-(--color-text)">Pilih sumber file</p>
+                <p className="text-sm font-bold text-(--color-text)">{t("serviceNotaHero.pickSource")}</p>
                 <p className="mt-1 text-[11px] text-(--color-text-secondary)">
-                  Foto kamera atau file gambar / PDF
+                  {t("serviceNotaHero.pickSourceHint")}
                 </p>
                 <div className="mt-5 grid w-full max-w-xs grid-cols-2 gap-2">
                   <button
@@ -195,7 +196,7 @@ export default function ServiceNotaHero({
                     className="inline-flex items-center justify-center gap-2 rounded-xl bg-(--color-primary) px-3 py-3.5 text-xs font-bold text-white shadow-md shadow-(--color-primary)/25 transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-50"
                   >
                     <CameraIcon className="h-4 w-4" />
-                    Camera
+                    {t("serviceNotaHero.camera")}
                   </button>
                   <button
                     type="button"
@@ -204,7 +205,7 @@ export default function ServiceNotaHero({
                     className="inline-flex items-center justify-center gap-2 rounded-xl border border-(--color-border) bg-(--color-bg) px-3 py-3.5 text-xs font-bold text-(--color-text) transition-all hover:border-(--color-primary)/40 hover:text-(--color-primary) active:scale-[0.98] disabled:opacity-50"
                   >
                     <FileIcon className="h-4 w-4" />
-                    Photo / PDF
+                    {t("serviceNotaHero.photoPdf")}
                   </button>
                 </div>
               </div>
@@ -231,16 +232,16 @@ export default function ServiceNotaHero({
               aria-hidden
             />
             <div className="min-w-0">
-              <p className="text-sm font-bold text-(--color-text)">AI sedang membaca nota…</p>
+              <p className="text-sm font-bold text-(--color-text)">{t("serviceNotaHero.processing")}</p>
               <p className="truncate text-xs text-(--color-text-secondary)">
-                {fileName ?? "Memproses file"}
+                {fileName ?? t("serviceNotaHero.processingFile")}
               </p>
             </div>
           </div>
           <div
             className="h-1.5 overflow-hidden rounded-full bg-(--color-border)/50"
             role="progressbar"
-            aria-label="Memproses nota"
+            aria-label={t("serviceNotaHero.processingAria")}
           >
             <div className="progress-indeterminate h-full rounded-full bg-(--color-primary)" />
           </div>
@@ -255,7 +256,7 @@ export default function ServiceNotaHero({
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-extrabold tracking-tight text-(--color-text)">
-                {itemCount} service items detected
+                {t("serviceNotaHero.itemsDetected", { n: itemCount })}
               </p>
               <p className="mt-0.5 truncate text-xs font-medium text-(--color-text-secondary)">
                 {fileName}
@@ -263,13 +264,13 @@ export default function ServiceNotaHero({
               <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-(--color-text-secondary)">
                 {detectedDateLabel ? (
                   <span>
-                    Date:{" "}
+                    {t("serviceNotaHero.dateLabel")}{" "}
                     <span className="font-semibold text-(--color-text)">{detectedDateLabel}</span>
                   </span>
                 ) : null}
                 {detectedKmLabel ? (
                   <span>
-                    KM:{" "}
+                    {t("serviceNotaHero.kmLabel")}{" "}
                     <span className="font-semibold tabular-nums text-(--color-text)">
                       {detectedKmLabel}
                     </span>
@@ -277,7 +278,7 @@ export default function ServiceNotaHero({
                 ) : null}
                 {estimatedTotalLabel ? (
                   <span>
-                    Est:{" "}
+                    {t("serviceNotaHero.estLabel")}{" "}
                     <span className="font-semibold tabular-nums text-(--color-primary)">
                       {estimatedTotalLabel}
                     </span>
@@ -292,7 +293,7 @@ export default function ServiceNotaHero({
             onClick={openPicker}
             className="w-full rounded-xl border border-(--color-border) bg-(--color-bg) py-2.5 text-xs font-bold text-(--color-text) transition-all hover:border-(--color-primary)/40 hover:text-(--color-primary) active:scale-[0.99] disabled:opacity-50"
           >
-            Replace File
+            {t("serviceNotaHero.replaceFile")}
           </button>
         </div>
       ) : null}
@@ -301,13 +302,13 @@ export default function ServiceNotaHero({
         <div className="space-y-3 rounded-2xl bg-(--color-surface) p-4 shadow-sm ring-1 ring-(--color-border)/40">
           <div className="rounded-xl bg-red-50 px-3 py-3 dark:bg-red-950/25">
             <p className="text-sm font-bold text-red-600 dark:text-red-400">
-              {phase === "empty" ? "No items detected" : "OCR failed"}
+              {phase === "empty" ? t("serviceNotaHero.emptyTitle") : t("serviceNotaHero.errorTitle")}
             </p>
             <p className="mt-1 text-xs leading-relaxed text-red-600/80 dark:text-red-300/80">
               {errorMessage ??
                 (phase === "empty"
-                  ? "AI tidak menemukan baris part di file ini. Coba foto lebih jelas atau isi manual."
-                  : "Gagal membaca nota. Pastikan file jelas, lalu coba lagi.")}
+                  ? t("serviceNotaHero.emptyDefault")
+                  : t("serviceNotaHero.errorDefault"))}
             </p>
           </div>
           <button
@@ -320,7 +321,7 @@ export default function ServiceNotaHero({
             }}
             className="w-full rounded-xl bg-(--color-primary) py-2.5 text-xs font-bold text-white shadow-md shadow-(--color-primary)/25 active:scale-[0.99] disabled:opacity-50"
           >
-            Coba upload lagi
+            {t("serviceNotaHero.retryUpload")}
           </button>
         </div>
       )}
@@ -332,15 +333,15 @@ export default function ServiceNotaHero({
             disabled={busy}
             onClick={openPicker}
             className="group flex w-full items-center gap-3 rounded-2xl border border-dashed border-(--color-primary)/40 bg-(--color-primary-soft)/25 px-3 py-3 text-left transition-all hover:border-(--color-primary)/60 hover:bg-(--color-primary-soft)/45 active:scale-[0.99] disabled:opacity-50"
-            aria-label="Upload service receipt"
+            aria-label={t("serviceNotaHero.scanAria")}
           >
             <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-(--color-primary) text-white shadow-md shadow-(--color-primary)/30 transition-transform group-hover:scale-105">
               <PlusIcon className="h-6 w-6" />
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block text-sm font-bold text-(--color-text)">Scan nota dengan AI</span>
+              <span className="block text-sm font-bold text-(--color-text)">{t("serviceNotaHero.scanTitle")}</span>
               <span className="mt-0.5 block text-[11px] leading-snug text-(--color-text-secondary)">
-                Tap untuk foto atau upload PDF
+                {t("serviceNotaHero.scanHint")}
               </span>
             </span>
             <span className="shrink-0 text-(--color-primary)/70" aria-hidden>
@@ -349,7 +350,7 @@ export default function ServiceNotaHero({
           </button>
           {showStoredOnly ? (
             <p className="px-1 text-[11px] font-medium text-(--color-text-muted)">
-              Nota tersimpan — tap di atas untuk ganti &amp; scan ulang.
+              {t("serviceNotaHero.storedHint")}
             </p>
           ) : null}
         </div>

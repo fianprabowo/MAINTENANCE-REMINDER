@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import SwipeableRow from "@/components/SwipeableRow";
+import { useTranslation } from "@/lib/i18n";
 import type { MileageLog } from "@/lib/types";
 
 /**
@@ -27,6 +28,7 @@ interface HistoryTimelineProps {
 }
 
 export default function HistoryTimeline({ logs, onDelete }: HistoryTimelineProps) {
+  const { t, formatNumber, formatDate } = useTranslation();
   // openSwipeId hoisted here (single-instance) so opening one row closes
   // the others. Mirrors iOS Mail / Gmail behavior.
   const [openSwipeId, setOpenSwipeId] = useState<string | null>(null);
@@ -35,7 +37,7 @@ export default function HistoryTimeline({ logs, onDelete }: HistoryTimelineProps
     return (
       <div className="py-8 text-center">
         <div className="mb-2 text-3xl">📊</div>
-        <p className="text-sm text-(--color-text-muted)">Belum ada riwayat KM.</p>
+        <p className="text-sm text-(--color-text-muted)">{t("historyTimeline.empty")}</p>
       </div>
     );
   }
@@ -46,7 +48,7 @@ export default function HistoryTimeline({ logs, onDelete }: HistoryTimelineProps
     <div className="space-y-1.5">
       {editable ? (
         <p className="text-[11px] text-(--color-text-muted)">
-          Geser ke kiri untuk hapus.
+          {t("historyTimeline.swipeHint")}
         </p>
       ) : null}
       <div role="list" className="relative space-y-0">
@@ -67,10 +69,10 @@ export default function HistoryTimeline({ logs, onDelete }: HistoryTimelineProps
               />
               <div className="flex-1">
                 <p className="font-bold text-(--color-text)">
-                  {log.mileage.toLocaleString("id-ID")} KM
+                  {formatNumber(log.mileage)} KM
                 </p>
                 <p className="text-xs text-(--color-text-muted)">
-                  {new Date(log.created_at).toLocaleDateString("id-ID", {
+                  {formatDate(log.created_at, {
                     year: "numeric",
                     month: "short",
                     day: "numeric",

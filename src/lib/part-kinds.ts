@@ -23,13 +23,25 @@
  *   - `applies_to_categories: []` artinya berlaku untuk semua kategori motor.
  */
 
+import type { TranslationKey } from "@/lib/i18n";
+
 export type PartKind = {
   /** ID stabil yang disimpan di JSONB. JANGAN ubah setelah ada user data. */
   slug: string;
-  /** Label di chip "Tambah cepat" (lebih ringkas). */
+  /**
+   * Label di chip "Tambah cepat" (lebih ringkas).
+   * @deprecated Gunakan `chip_label_key` + `t()` untuk locale awareness.
+   */
   chip_label: string;
-  /** Label di card halaman Kondisi Part (boleh lebih panjang). */
+  /** i18n key untuk `chip_label`. */
+  chip_label_key: TranslationKey;
+  /**
+   * Label di card halaman Kondisi Part (boleh lebih panjang).
+   * @deprecated Gunakan `display_label_key` + `t()` untuk locale awareness.
+   */
   display_label: string;
+  /** i18n key untuk `display_label`. */
+  display_label_key: TranslationKey;
   /** Emoji untuk visual ringan di card kondisi. */
   icon: string;
   /** Interval km. Null = tidak relevan dengan km (mis. aki). */
@@ -54,7 +66,9 @@ export const PART_KINDS: PartKind[] = [
   {
     slug: "spark_plug",
     chip_label: "Busi",
+    chip_label_key: "partKind.sparkPlugChip",
     display_label: "Busi",
+    display_label_key: "partKind.sparkPlugDisplay",
     icon: "⚡",
     interval_km: 8000,
     interval_months: null,
@@ -65,7 +79,9 @@ export const PART_KINDS: PartKind[] = [
   {
     slug: "brake_pad",
     chip_label: "Kampas rem",
+    chip_label_key: "partKind.brakePadChip",
     display_label: "Kampas rem",
+    display_label_key: "partKind.brakePadDisplay",
     icon: "🛑",
     interval_km: 15000,
     interval_months: null,
@@ -76,7 +92,9 @@ export const PART_KINDS: PartKind[] = [
   {
     slug: "air_filter",
     chip_label: "Filter udara",
+    chip_label_key: "partKind.airFilterChip",
     display_label: "Filter udara",
+    display_label_key: "partKind.airFilterDisplay",
     icon: "💨",
     interval_km: 10000,
     interval_months: 12,
@@ -87,7 +105,9 @@ export const PART_KINDS: PartKind[] = [
   {
     slug: "oil_filter",
     chip_label: "Filter oli",
+    chip_label_key: "partKind.oilFilterChip",
     display_label: "Filter oli",
+    display_label_key: "partKind.oilFilterDisplay",
     icon: "🧴",
     interval_km: 5000,
     interval_months: null,
@@ -98,7 +118,9 @@ export const PART_KINDS: PartKind[] = [
   {
     slug: "roller_cvt",
     chip_label: "Roller CVT",
+    chip_label_key: "partKind.rollerCvtChip",
     display_label: "Roller CVT",
+    display_label_key: "partKind.rollerCvtDisplay",
     icon: "⚙️",
     interval_km: 25000,
     interval_months: null,
@@ -109,7 +131,9 @@ export const PART_KINDS: PartKind[] = [
   {
     slug: "v_belt",
     chip_label: "V-belt",
+    chip_label_key: "partKind.vBeltChip",
     display_label: "V-belt CVT",
+    display_label_key: "partKind.vBeltDisplay",
     icon: "🔗",
     interval_km: 25000,
     interval_months: null,
@@ -120,7 +144,9 @@ export const PART_KINDS: PartKind[] = [
   {
     slug: "kampas_ganda",
     chip_label: "Kampas ganda",
+    chip_label_key: "partKind.kampasGandaChip",
     display_label: "Kampas ganda",
+    display_label_key: "partKind.kampasGandaDisplay",
     icon: "🌀",
     interval_km: 24000,
     interval_months: null,
@@ -131,7 +157,9 @@ export const PART_KINDS: PartKind[] = [
   {
     slug: "chain_set",
     chip_label: "Rantai & gear",
+    chip_label_key: "partKind.chainSetChip",
     display_label: "Rantai & gear",
+    display_label_key: "partKind.chainSetDisplay",
     icon: "🔗",
     interval_km: 20000,
     interval_months: null,
@@ -142,7 +170,9 @@ export const PART_KINDS: PartKind[] = [
   {
     slug: "kampas_kopling",
     chip_label: "Kampas kopling",
+    chip_label_key: "partKind.kampasKoplingChip",
     display_label: "Kampas kopling",
+    display_label_key: "partKind.kampasKoplingDisplay",
     icon: "🔧",
     interval_km: 20000,
     interval_months: null,
@@ -153,7 +183,9 @@ export const PART_KINDS: PartKind[] = [
   {
     slug: "battery",
     chip_label: "Aki",
+    chip_label_key: "partKind.batteryChip",
     display_label: "Aki",
+    display_label_key: "partKind.batteryDisplay",
     icon: "🔋",
     interval_km: null,
     interval_months: 24,
@@ -164,7 +196,9 @@ export const PART_KINDS: PartKind[] = [
   {
     slug: "tire",
     chip_label: "Ban",
+    chip_label_key: "partKind.tireChip",
     display_label: "Ban",
+    display_label_key: "partKind.tireDisplay",
     icon: "🛞",
     interval_km: 20000,
     interval_months: 36,
@@ -175,7 +209,9 @@ export const PART_KINDS: PartKind[] = [
   {
     slug: "lamp",
     chip_label: "Lampu",
+    chip_label_key: "partKind.lampChip",
     display_label: "Lampu",
+    display_label_key: "partKind.lampDisplay",
     icon: "💡",
     interval_km: null,
     interval_months: null,

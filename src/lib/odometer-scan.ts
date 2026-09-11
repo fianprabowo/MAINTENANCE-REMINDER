@@ -4,6 +4,28 @@ import { parseOdometerConfidence } from "./odometer-normalize";
 
 export type ScanProgress = "validating" | "scanning" | "processing";
 
+/**
+ * Stable error codes untuk odometer-scan failures. UI (mis. modal scan)
+ * catch `OdometerScanError` lalu translate via `t(\`odometerScanError.${code}\`)`.
+ * Kenapa class terpisah, bukan pakai `err.message`? Karena `err.message`
+ * dari server bisa jadi Indonesian debug string (mis. GEMINI config error)
+ * yang janggal muncul di UI English.
+ */
+export type OdometerScanErrorCode = "server_error" | "invalid_response";
+
+export class OdometerScanError extends Error {
+  readonly code: OdometerScanErrorCode;
+  /** Raw upstream message untuk logging — jangan render ke user. */
+  readonly upstream: string | null;
+
+  constructor(code: OdometerScanErrorCode, upstream: string | null = null) {
+    super(`odometer scan failed: ${code}${upstream ? ` (${upstream})` : ""}`);
+    this.name = "OdometerScanError";
+    this.code = code;
+    this.upstream = upstream;
+  }
+}
+
 export async function scanOdometerFromCanvas(
   sourceCanvas: HTMLCanvasElement,
   crop: CropRect,
@@ -32,11 +54,11 @@ export async function scanOdometerFromCanvas(
   };
 
   if (!res.ok) {
-    throw new Error(data.error ?? "Gagal membaca odometer");
+    throw new OdometerScanError("server_error", data.error ?? null);
   }
 
   if (typeof data.km !== "number" || !Number.isFinite(data.km)) {
-    throw new Error("Respons odometer tidak valid");
+    throw new OdometerScanError("invalid_response");
   }
 
   return {

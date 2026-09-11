@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useTranslation } from "@/lib/i18n";
 
 export interface SelectOption {
   value: string;
@@ -40,13 +41,16 @@ export default function CustomSelect({
   options,
   value,
   onChange,
-  placeholder = "Select...",
+  placeholder,
   required,
   className,
   maxHeight = 260,
   error,
   disabled = false,
 }: CustomSelectProps) {
+  const { t } = useTranslation();
+  // Default placeholder di-localize saat prop tidak di-set caller.
+  const effectivePlaceholder = placeholder ?? t("customSelect.defaultPlaceholder");
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -126,7 +130,7 @@ export default function CustomSelect({
               {selected.label}
             </>
           ) : (
-            placeholder
+            effectivePlaceholder
           )}
         </span>
         <ChevronDown

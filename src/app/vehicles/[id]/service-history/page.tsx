@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import {
@@ -25,9 +25,10 @@ import ConfirmDialog from "@/components/ConfirmDialog";
 import SwipeableRow from "@/components/SwipeableRow";
 import { partKindsForChips, type PartKind } from "@/lib/part-kinds";
 import type { NotaScanResult } from "@/lib/nota-normalize";
-import { scanNotaFromFile } from "@/lib/nota-scan";
+import { NotaScanError, scanNotaFromFile } from "@/lib/nota-scan";
 import { mapNotaItemsToFormParts } from "@/lib/nota-item-classify";
 import ServiceNotaHero, { type ServiceNotaPhase } from "@/components/ServiceNotaHero";
+import { useAppErrorMessage, useTranslation, type TranslationKey } from "@/lib/i18n";
 import { toast } from "sonner";
 
 /**
@@ -89,53 +90,16 @@ function digitsOnly(raw: string, maxLen: number) {
   return raw.replace(/\D/g, "").slice(0, maxLen);
 }
 
-function formatServiceDate(isoDate: string) {
-  return new Date(isoDate + "T12:00:00").toLocaleDateString("id-ID", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
-
-function formatKm(n: number) {
-  return n.toLocaleString("id-ID");
-}
-
-function formatIdr(n: number) {
-  return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(n);
-}
-
-/** Format string angka jadi pemisah ribuan id-ID (mis. "1000000" → "1.000.000"). */
-function formatThousandsId(digits: string): string {
+/** Format string angka jadi pemisah ribuan locale-aware. */
+function formatThousandsId(digits: string, formatNumber: (n: number) => string): string {
   if (!digits) return "";
   const n = parseInt(digits, 10);
   if (!Number.isFinite(n)) return "";
-  return n.toLocaleString("id-ID");
+  return formatNumber(n);
 }
 
 function sumParts(parts: ServicePartLine[]) {
   return parts.reduce((s, p) => s + (Number.isFinite(p.price) ? Math.max(0, p.price) : 0), 0);
-}
-
-function recordTitle(r: ServiceRecord) {
-  return r.service_type === "heavy" ? "Servis besar" : "Servis ringan";
-}
-
-/**
- * Ringkas event ganti oli pada satu record menjadi label pendek untuk badge:
- * - "Ganti oli mesin"
- * - "Ganti oli gardan"
- * - "Ganti oli mesin & gardan"  (kedua flag aktif sekaligus)
- * - null  bila bukan event ganti oli
- *
- * Catatan: label "gardan" dipakai universal supaya konsisten — di kategori non-matic
- * istilahnya "gearbox", tapi UI lebih mudah dibaca dengan satu istilah.
- */
-function oilChangeLabel(r: ServiceRecord): string | null {
-  if (r.changed_engine_oil && r.changed_gearbox_oil) return "Ganti oli mesin & gardan";
-  if (r.changed_engine_oil) return "Ganti oli mesin";
-  if (r.changed_gearbox_oil) return "Ganti oli gardan";
-  return null;
 }
 
 function defaultForm() {
@@ -258,12 +222,6 @@ const btnDisabled = "disabled:pointer-events-none disabled:opacity-50";
  * Set chip Quick-Add. Disusun module-level supaya stabil identitasnya
  * (tidak re-create per render) dan mudah ditambah/diubah satu tempat.
  */
-const QUICK_CHIPS: ReadonlyArray<{ id: ServiceChip; label: string }> = [
-  { id: "light", label: "Servis ringan" },
-  { id: "heavy", label: "Servis besar" },
-  { id: "oil_change", label: "Ganti oli" },
-];
-
 /** Field input filled-style — single source kelas supaya konsisten lintas form. */
 const inputClass =
   "w-full rounded-xl bg-(--color-bg) px-4 py-3 text-sm text-(--color-text) outline-none placeholder:text-(--color-text-muted)/80 ring-1 ring-(--color-border)/40 focus:ring-2 focus:ring-(--color-primary)/40 transition-all duration-150";
@@ -278,7 +236,15 @@ const inputClass =
  * sebagai hero tile. `aria-label` di-pass agar tetap aksesibel walau visualnya
  * berisi sub-label dekoratif.
  */
-function AddServiceButton({ onClick, label }: { onClick: () => void; label: string }) {
+function AddServiceButton({
+  onClick,
+  label,
+  sublabel,
+}: {
+  onClick: () => void;
+  label: string;
+  sublabel: string;
+}) {
   return (
     <button
       type="button"
@@ -305,7 +271,7 @@ function AddServiceButton({ onClick, label }: { onClick: () => void; label: stri
       <span className="min-w-0 flex-1">
         <span className="block text-sm font-semibold text-(--color-primary)">{label}</span>
         <span className="mt-0.5 block text-xs text-(--color-text-secondary)">
-          Catat servis baru kendaraanmu
+          {sublabel}
         </span>
       </span>
       <span
@@ -332,6 +298,42 @@ export default function ServiceHistoryPage() {
   const { id } = useParams<{ id: string }>();
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
+  const { t, formatDate, formatNumber } = useTranslation();
+  const describeAppError = useAppErrorMessage();
+
+  const formatServiceDate = useCallback(
+    (isoDate: string) =>
+      formatDate(isoDate + "T12:00:00", { day: "numeric", month: "short", year: "numeric" }),
+    [formatDate],
+  );
+  const formatKm = useCallback((n: number) => formatNumber(n), [formatNumber]);
+  const formatIdr = useCallback(
+    (n: number) =>
+      formatNumber(n, { style: "currency", currency: "IDR", maximumFractionDigits: 0 }),
+    [formatNumber],
+  );
+  const recordTitle = useCallback(
+    (r: ServiceRecord) =>
+      r.service_type === "heavy" ? t("serviceHistory.heavyService") : t("serviceHistory.lightService"),
+    [t],
+  );
+  const oilChangeLabel = useCallback(
+    (r: ServiceRecord): string | null => {
+      if (r.changed_engine_oil && r.changed_gearbox_oil) return t("serviceHistory.oilChangeBoth");
+      if (r.changed_engine_oil) return t("serviceHistory.oilChangeEngine");
+      if (r.changed_gearbox_oil) return t("serviceHistory.oilChangeGearbox");
+      return null;
+    },
+    [t],
+  );
+  const quickChips = useMemo(
+    (): ReadonlyArray<{ id: ServiceChip; label: string }> => [
+      { id: "light", label: t("serviceHistory.chipLight") },
+      { id: "heavy", label: t("serviceHistory.chipHeavy") },
+      { id: "oil_change", label: t("serviceHistory.chipOil") },
+    ],
+    [t],
+  );
   const modalKmRef = useRef<HTMLInputElement>(null);
   const modalScrollRef = useRef<HTMLDivElement>(null);
   const [detail, setDetail] = useState<VehicleDetail | null>(null);
@@ -588,15 +590,17 @@ export default function ServiceHistoryPage() {
       if (emptyIdx !== -1) {
         targetKey = rows[emptyIdx].key;
         return rows.map((r, i) =>
-          i === emptyIdx ? { ...r, name: kind.chip_label, kind_slug: kind.slug } : r,
+          i === emptyIdx
+            ? { ...r, name: t(kind.chip_label_key), kind_slug: kind.slug }
+            : r,
         );
       }
-      const fresh = newPartLine({ name: kind.chip_label, kind_slug: kind.slug });
+      const fresh = newPartLine({ name: t(kind.chip_label_key), kind_slug: kind.slug });
       targetKey = fresh.key;
       return [...rows, fresh];
     });
     if (targetKey) focusAndScrollById(`part-unit-${targetKey}`);
-  }, []);
+  }, [t]);
 
   /**
    * Tambah baris kosong manual (tombol "+ Tambah part lain").
@@ -657,26 +661,26 @@ export default function ServiceHistoryPage() {
 
     if (result.items.length === 0) {
       setOcrPhase("empty");
-      setOcrError("AI tidak menemukan baris part di nota ini.");
+      setOcrError(t("serviceHistory.ocrEmptyParts"));
     } else {
       setOcrPhase("success");
       setOcrError(null);
       const oilBits = [
-        mapped.changed_engine_oil ? "oli mesin" : null,
-        mapped.changed_gearbox_oil ? "oli gardan" : null,
+        mapped.changed_engine_oil ? t("serviceHistory.ocrEngineOil") : null,
+        mapped.changed_gearbox_oil ? t("serviceHistory.ocrGearboxOil") : null,
       ].filter(Boolean);
       const tagged = mapped.partLines.filter((p) => p.kind_slug).length;
       const hint = [
         oilBits.length ? oilBits.join(" + ") : null,
-        tagged > 0 ? `${tagged} part terklasifikasi` : null,
+        tagged > 0 ? t("serviceHistory.ocrPartsClassified", { n: tagged }) : null,
       ]
         .filter(Boolean)
         .join(" · ");
       if (hint) {
-        toast.message("Mapping part dari nota", { description: hint });
+        toast.message(t("serviceHistory.ocrMapParts"), { description: hint });
       }
     }
-  }, []);
+  }, [t]);
 
   const handleNotaFilePick = useCallback(
     async (file: File) => {
@@ -690,10 +694,15 @@ export default function ServiceHistoryPage() {
         applyNotaScanResult(result, file);
       } catch (err) {
         setOcrPhase("error");
-        setOcrError(err instanceof Error ? err.message : "Gagal membaca nota");
+        // Structured error → translate; fallback ke generic message.
+        if (err instanceof NotaScanError) {
+          setOcrError(t(`notaScanError.${err.code}` as TranslationKey));
+        } else {
+          setOcrError(t("serviceHistory.ocrReadFailed"));
+        }
       }
     },
-    [applyNotaScanResult],
+    [applyNotaScanResult, t],
   );
 
   const clearNotaFile = useCallback(() => {
@@ -763,15 +772,15 @@ export default function ServiceHistoryPage() {
         }
       }
       await deleteServiceRecord(id, target.id);
-      toast.success("Riwayat servis dihapus");
+      toast.success(t("serviceHistory.toastDeleted"));
     } catch (err) {
       setRecords(previous);
-      toast.error(err instanceof Error ? err.message : "Gagal menghapus riwayat servis");
+      toast.error(describeAppError(err, t("serviceHistory.toastDeleteFailed")));
     } finally {
       setDeletingRecord(false);
       setPendingDeleteRecord(null);
     }
-  }, [id, pendingDeleteRecord, deletingRecord, records]);
+  }, [id, pendingDeleteRecord, deletingRecord, records, t]);
 
   const openEditModal = useCallback((r: ServiceRecord) => {
     setSelectedRecord(null);
@@ -979,13 +988,13 @@ export default function ServiceHistoryPage() {
    */
   const kmError: string | null = (() => {
     const raw = form.mileage_at_service.trim();
-    if (raw === "") return "Masukkan KM odometer";
+    if (raw === "") return t("serviceHistory.errorEnterOdometerKm");
     const km = parseInt(raw, 10);
-    if (Number.isNaN(km) || km < 0) return "KM tidak valid";
+    if (Number.isNaN(km) || km < 0) return t("serviceHistory.errorInvalidKm");
     const isUpdate = editingOriginalKm != null;
     const kmUnchanged = isUpdate && km === editingOriginalKm;
     if (!kmUnchanged && km < currentKm) {
-      return `KM minimal ${formatKm(currentKm)} (KM saat ini)`;
+      return t("serviceHistory.errorKmMin", { km: formatKm(currentKm) });
     }
     return null;
   })();
@@ -1003,7 +1012,7 @@ export default function ServiceHistoryPage() {
   } | null => {
     const km = parseInt(form.mileage_at_service, 10);
     if (form.mileage_at_service.trim() === "" || Number.isNaN(km) || km < 0) {
-      toast.error("Masukkan KM servis (angka ≥ 0)");
+      toast.error(t("serviceHistory.toastEnterServiceKm"));
       return null;
     }
     // Forward-only guard di payload builder, redundan dengan `kmError`
@@ -1014,7 +1023,7 @@ export default function ServiceHistoryPage() {
       return null;
     }
     if (!form.serviced_at) {
-      toast.error("Pilih tanggal servis");
+      toast.error(t("serviceHistory.toastSelectDate"));
       return null;
     }
     const description = form.description.trim() || undefined;
@@ -1037,7 +1046,7 @@ export default function ServiceHistoryPage() {
       );
       if (enginePrice > 0) {
         oilParts.push({
-          name: "Oli mesin",
+          name: t("serviceHistory.partNameEngineOil"),
           price: enginePrice,
           kind_slug: OIL_PART_SLUGS.engine,
         });
@@ -1050,7 +1059,7 @@ export default function ServiceHistoryPage() {
       );
       if (gearboxPrice > 0) {
         oilParts.push({
-          name: "Oli gardan",
+          name: t("serviceHistory.partNameGearboxOil"),
           price: gearboxPrice,
           kind_slug: OIL_PART_SLUGS.gearbox,
         });
@@ -1080,10 +1089,10 @@ export default function ServiceHistoryPage() {
       let saved: ServiceRecord;
       if (editingId) {
         saved = await updateServiceRecord(id as string, editingId, payload);
-        toast.success("Riwayat servis diperbarui");
+        toast.success(t("serviceHistory.toastUpdated"));
       } else {
         saved = await insertServiceRecord(id as string, payload);
-        toast.success("Riwayat servis tersimpan");
+        toast.success(t("serviceHistory.toastSaved"));
       }
 
       // Upload nota ke Storage setelah record punya id (path memakai recordId).
@@ -1109,8 +1118,8 @@ export default function ServiceHistoryPage() {
           console.warn("Failed to upload service receipt:", uploadErr);
           toast.warning(
             uploadErr instanceof Error
-              ? `Servis tersimpan, tapi nota gagal diunggah: ${uploadErr.message}`
-              : "Servis tersimpan, tapi nota gagal diunggah",
+              ? t("serviceHistory.toastReceiptUploadFailedWithMsg", { msg: uploadErr.message })
+              : t("serviceHistory.toastReceiptUploadFailed"),
           );
         }
       }
@@ -1128,7 +1137,7 @@ export default function ServiceHistoryPage() {
           await insertMileage(id as string, payload.mileage_at_service);
         } catch (err) {
           console.warn("Failed to sync vehicle KM after service save:", err);
-          toast.warning("Servis tersimpan, tapi KM kendaraan gagal ter-update");
+          toast.warning(t("serviceHistory.toastKmUpdateFailed"));
         }
       }
 
@@ -1140,28 +1149,28 @@ export default function ServiceHistoryPage() {
         const resets = await resetRemindersAfterServiceRecord(id as string, saved);
         if (resets.length > 0) {
           const labels = resets
-            .map(
-              ({ reminder }) =>
-                getReminderPreset(reminder.preset_slug)?.label ?? "reminder",
-            )
+            .map(({ reminder }) => {
+              const preset = getReminderPreset(reminder.preset_slug);
+              return preset ? t(preset.labelKey) : t("nav.reminder");
+            })
             .join(", ");
           const description =
             resets.length === 1
-              ? `${labels} di-reset dari servis ini.`
-              : `${resets.length} reminder di-reset (${labels}).`;
-          toast.success("Reminder direset", {
+              ? t("serviceHistory.toastReminderResetSingle", { labels })
+              : t("serviceHistory.toastReminderResetMulti", { n: resets.length, labels });
+          toast.success(t("serviceHistory.toastReminderReset"), {
             description,
             // 12s gives the user time to notice & undo without lingering.
             duration: 12_000,
             action: {
-              label: "Undo",
+              label: t("common.undo"),
               onClick: () => {
                 void (async () => {
                   try {
                     await Promise.all(
                       resets.map(({ snapshotId }) => restoreReminderFromReset(snapshotId)),
                     );
-                    toast.success("Reset dibatalkan");
+                    toast.success(t("serviceHistory.toastUndo"));
                     // Notify other surfaces (reminder page) that data
                     // changed so they refresh from server.
                     window.dispatchEvent(new CustomEvent("mr:vehicle-data-changed"));
@@ -1169,7 +1178,7 @@ export default function ServiceHistoryPage() {
                     toast.error(
                       undoErr instanceof Error
                         ? undoErr.message
-                        : "Gagal membatalkan reset",
+                        : t("serviceHistory.toastUndoFailed"),
                     );
                   }
                 })();
@@ -1186,7 +1195,7 @@ export default function ServiceHistoryPage() {
       closeAddModal();
       await load();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Gagal menyimpan");
+      toast.error(describeAppError(err, t("serviceHistory.toastSaveFailed")));
     } finally {
       setSaving(false);
     }
@@ -1208,7 +1217,7 @@ export default function ServiceHistoryPage() {
           onClick={() => router.push(`/vehicles/${id}`)}
           className={`mb-4 self-start rounded-lg px-1 py-0.5 text-sm font-semibold text-(--color-text-secondary) hover:bg-(--color-surface) hover:text-(--color-text) ${btnPress}`}
         >
-          ← Kembali ke detail
+          {t("serviceHistory.backToDetail")}
         </button>
 
         {loading || !detail ? (
@@ -1221,14 +1230,18 @@ export default function ServiceHistoryPage() {
               </span>
               <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
                 <div>
-                  <h1 className="text-2xl font-extrabold tracking-tight text-(--color-text)">Riwayat Servis</h1>
-                  <p className="mt-1 text-sm text-(--color-text-secondary)">Catat &amp; lihat histori perawatan kendaraan</p>
+                  <h1 className="text-2xl font-extrabold tracking-tight text-(--color-text)">{t("serviceHistory.title")}</h1>
+                  <p className="mt-1 text-sm text-(--color-text-secondary)">{t("serviceHistory.subtitle")}</p>
                 </div>
                 {/* CTA "Tambah servis" hanya muncul kalau sudah ada record —
                     menyamai pattern di Overview page: empty state punya CTA
                     sendiri di tengah, jadi tidak perlu duplikat di header. */}
                 {records.length > 0 ? (
-                  <AddServiceButton onClick={openAddModal} label="Tambah servis" />
+                  <AddServiceButton
+                    onClick={openAddModal}
+                    label={t("serviceHistory.addService")}
+                    sublabel={t("serviceHistory.addServiceSub")}
+                  />
                 ) : null}
               </div>
             </header>
@@ -1238,7 +1251,7 @@ export default function ServiceHistoryPage() {
                 <button
                   type="button"
                   onClick={openAddModal}
-                  aria-label="Tambah servis"
+                  aria-label={t("serviceHistory.addServiceAria")}
                   className="group flex w-full max-w-[280px] flex-col items-center rounded-[1.75rem] border border-(--color-border) bg-(--color-surface) p-6 pb-7 text-center shadow-sm ring-1 ring-black/[0.03] transition-all hover:border-(--color-primary)/35 hover:shadow-md hover:ring-(--color-primary)/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-primary) focus-visible:ring-offset-2 focus-visible:ring-offset-(--color-bg) active:scale-[0.98] dark:ring-white/[0.04]"
                 >
                   <div className="mb-5 flex h-[7.25rem] w-full max-w-[200px] items-center justify-center rounded-2xl border-2 border-dashed border-(--color-primary)/35 bg-(--color-primary-soft) transition-colors group-hover:border-(--color-primary)/55 group-hover:bg-(--color-primary)/15">
@@ -1260,21 +1273,21 @@ export default function ServiceHistoryPage() {
                     </div>
                   </div>
                   <h2 className="text-lg font-bold tracking-tight text-(--color-text)">
-                    Belum ada riwayat servis
+                    {t("serviceHistory.emptyTitle")}
                   </h2>
                   <p className="mt-2 text-sm leading-relaxed text-(--color-text-secondary)">
-                    Catat servis pertama kendaraanmu — part, biaya, dan ganti oli bisa diisi sekaligus.
+                    {t("serviceHistory.emptySubtitle")}
                   </p>
                   <span className="mt-5 inline-flex items-center gap-1.5 text-sm font-semibold text-(--color-primary)">
                     <span className="rounded-lg bg-(--color-primary-soft) px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-(--color-primary)">
-                      + Tambah servis
+                      {t("serviceHistory.emptyCta")}
                     </span>
                   </span>
                 </button>
               </div>
             ) : (
               <section className="space-y-4">
-                <h2 className="text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)">Riwayat servis</h2>
+                <h2 className="text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)">{t("serviceHistory.listHeading")}</h2>
                 <div role="list" className="flex flex-col gap-4">
                   {records.map((r) => {
                     const total = totalFromRecord(r);
@@ -1298,7 +1311,7 @@ export default function ServiceHistoryPage() {
                             type="button"
                             onClick={() => openEditModal(r)}
                             className={`absolute right-2 top-2 z-10 rounded-lg p-2 text-gray-400 transition-all duration-150 hover:bg-gray-100 hover:text-gray-600 dark:text-zinc-500 dark:hover:bg-zinc-800/90 dark:hover:text-zinc-300 ${btnPress}`}
-                            aria-label="Ubah servis"
+                            aria-label={t("serviceHistory.editService")}
                           >
                             <PencilEditIcon className="h-5 w-5" />
                           </button>
@@ -1339,7 +1352,7 @@ export default function ServiceHistoryPage() {
                               ) : null}
                               {total > 0 ? (
                                 <p className="mt-2 text-sm font-semibold tabular-nums text-sky-600 dark:text-sky-400">
-                                  Total {formatIdr(total)}
+                                  {t("serviceHistory.total", { amount: formatIdr(total) })}
                                 </p>
                               ) : null}
                             </div>
@@ -1383,7 +1396,7 @@ export default function ServiceHistoryPage() {
                                       />
                                     </svg>
                                   </span>
-                                  {descOpen ? "Sembunyikan" : "Lihat detail"}
+                                  {descOpen ? t("serviceHistory.hideDetail") : t("serviceHistory.showDetail")}
                                 </button>
                               </div>
                             ) : null}
@@ -1409,7 +1422,7 @@ export default function ServiceHistoryPage() {
           <button
             type="button"
             className="absolute inset-0 bg-black/40 transition-opacity duration-150 hover:bg-black/45"
-            aria-label="Tutup"
+            aria-label={t("common.close")}
             onClick={closeAddModal}
           />
           {/* max-h 80dvh per spec ("Maks tinggi: 80% layar"). Modal pakai
@@ -1418,7 +1431,7 @@ export default function ServiceHistoryPage() {
             <div className="flex shrink-0 items-start justify-between gap-3 border-b border-(--color-border)/60 px-5 py-4">
               <div>
                 <h2 id="add-service-title" className="text-lg font-extrabold text-(--color-text)">
-                  {editingId ? "Ubah servis" : "Record service"}
+                  {editingId ? t("serviceHistory.modalEditTitle") : t("serviceHistory.modalAddTitle")}
                 </h2>
                 {detail ? (
                   <p className="mt-0.5 text-xs text-(--color-text-secondary)">{detail.vehicle.name}</p>
@@ -1428,7 +1441,7 @@ export default function ServiceHistoryPage() {
                 type="button"
                 onClick={closeAddModal}
                 className={`rounded-lg p-2 text-(--color-text-muted) hover:bg-(--color-surface) hover:text-(--color-text) ${btnPress}`}
-                aria-label="Tutup"
+                aria-label={t("common.close")}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5">
                   <path d="M18 6 6 18M6 6l12 12" />
@@ -1468,13 +1481,13 @@ export default function ServiceHistoryPage() {
                 {/* Manual service info — secondary to AI result */}
                 <section className="space-y-3">
                   <h3 className="text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)">
-                    Service information
+                    {t("serviceHistory.serviceInformation")}
                   </h3>
 
                   <div>
                     <div className="flex items-center justify-between gap-2">
                       <label htmlFor="modal-km" className="text-[10px] font-bold text-(--color-text-muted)">
-                        Odometer
+                        {t("serviceHistory.odometer")}
                       </label>
                       {currentKm > 0 ? (
                         <button
@@ -1487,7 +1500,7 @@ export default function ServiceHistoryPage() {
                           }
                           className="text-[10px] font-bold uppercase tracking-wide text-(--color-primary)"
                         >
-                          SET {formatKm(currentKm)}
+                          {t("serviceHistory.setKm", { km: formatKm(currentKm) })}
                         </button>
                       ) : null}
                     </div>
@@ -1515,7 +1528,7 @@ export default function ServiceHistoryPage() {
                             ? "ring-red-400 focus:ring-red-400/60"
                             : ""
                         }`}
-                        placeholder="Misal: 12500"
+                        placeholder={t("serviceHistory.kmPlaceholder")}
                       />
                       <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xs font-semibold uppercase tracking-wide text-(--color-text-muted)" aria-hidden>
                         km
@@ -1527,7 +1540,7 @@ export default function ServiceHistoryPage() {
                   </div>
 
                   <div>
-                    <label className="text-[10px] font-bold text-(--color-text-muted)">Date</label>
+                    <label className="text-[10px] font-bold text-(--color-text-muted)">{t("serviceHistory.date")}</label>
                     <input
                       type="date"
                       required
@@ -1539,7 +1552,7 @@ export default function ServiceHistoryPage() {
 
                   <div>
                     <label htmlFor="modal-location" className="text-[10px] font-bold text-(--color-text-muted)">
-                      Workshop location
+                      {t("serviceHistory.workshopLocation")}
                     </label>
                     <div className="relative mt-1.5">
                       <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-(--color-text-muted)" aria-hidden>
@@ -1556,7 +1569,7 @@ export default function ServiceHistoryPage() {
                         value={form.location}
                         onChange={(e) => setForm({ ...form, location: e.target.value })}
                         maxLength={120}
-                        placeholder="Mis. AHASS Cibubur"
+                        placeholder={t("serviceHistory.locationPlaceholder")}
                         className={`${inputClass} pl-10`}
                       />
                     </div>
@@ -1570,9 +1583,9 @@ export default function ServiceHistoryPage() {
                   </div>
 
                   <div>
-                    <span className="text-[10px] font-bold text-(--color-text-muted)">Service type</span>
-                    <div role="radiogroup" aria-label="Jenis servis" className="mt-2 flex flex-wrap gap-2">
-                      {QUICK_CHIPS.map((c) => {
+                    <span className="text-[10px] font-bold text-(--color-text-muted)">{t("serviceHistory.serviceType")}</span>
+                    <div role="radiogroup" aria-label={t("serviceHistory.serviceTypeAria")} className="mt-2 flex flex-wrap gap-2">
+                      {quickChips.map((c) => {
                         const isActive = activeChip === c.id;
                         return (
                           <button
@@ -1598,11 +1611,11 @@ export default function ServiceHistoryPage() {
                   <div className="flex flex-wrap gap-2">
                     {(
                       [
-                        { which: "engine" as const, flagKey: "changed_engine_oil" as const, label: "Oli mesin", visible: true },
+                        { which: "engine" as const, flagKey: "changed_engine_oil" as const, label: t("serviceHistory.engineOil"), visible: true },
                         {
                           which: "gearbox" as const,
                           flagKey: "changed_gearbox_oil" as const,
-                          label: "Oli gardan",
+                          label: t("serviceHistory.gearboxOil"),
                           visible: hasGearboxInterval || form.changed_gearbox_oil,
                         },
                       ] as const
@@ -1631,13 +1644,13 @@ export default function ServiceHistoryPage() {
                     <div className="grid grid-cols-2 gap-2">
                       {form.changed_engine_oil ? (
                         <div className="relative">
-                          <label className="mb-0.5 block text-[10px] font-bold text-(--color-text-muted)">Harga oli mesin</label>
+                          <label className="mb-0.5 block text-[10px] font-bold text-(--color-text-muted)">{t("serviceHistory.engineOilPrice")}</label>
                           <span className="pointer-events-none absolute left-2.5 top-[1.85rem] text-[10px] font-semibold text-(--color-text-muted)">Rp</span>
                           <input
                             ref={oilEnginePriceRef}
                             type="text"
                             inputMode="numeric"
-                            value={formatThousandsId(oilPrices.engine)}
+                            value={formatThousandsId(oilPrices.engine, formatNumber)}
                             onChange={(e) =>
                               setOilPrices((p) => ({ ...p, engine: digitsOnly(e.target.value, 12) }))
                             }
@@ -1648,13 +1661,13 @@ export default function ServiceHistoryPage() {
                       ) : null}
                       {form.changed_gearbox_oil ? (
                         <div className="relative">
-                          <label className="mb-0.5 block text-[10px] font-bold text-(--color-text-muted)">Harga oli gardan</label>
+                          <label className="mb-0.5 block text-[10px] font-bold text-(--color-text-muted)">{t("serviceHistory.gearboxOilPrice")}</label>
                           <span className="pointer-events-none absolute left-2.5 top-[1.85rem] text-[10px] font-semibold text-(--color-text-muted)">Rp</span>
                           <input
                             ref={oilGearboxPriceRef}
                             type="text"
                             inputMode="numeric"
-                            value={formatThousandsId(oilPrices.gearbox)}
+                            value={formatThousandsId(oilPrices.gearbox, formatNumber)}
                             onChange={(e) =>
                               setOilPrices((p) => ({ ...p, gearbox: digitsOnly(e.target.value, 12) }))
                             }
@@ -1671,32 +1684,44 @@ export default function ServiceHistoryPage() {
                 <section className="space-y-3">
                   <div className="flex items-center justify-between gap-2">
                     <h3 className="text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)">
-                      Service items
+                      {t("serviceHistory.serviceItems")}
                     </h3>
                     <span className="text-[11px] font-semibold tabular-nums text-(--color-text-secondary)">
-                      {normalizePartLines(partLines).length} items
+                      {t("serviceHistory.itemsCount", { n: normalizePartLines(partLines).length })}
                     </span>
                   </div>
 
                   <div className="relative">
-                    <label className="sr-only" htmlFor="part-search">Search spare part</label>
+                    <label className="sr-only" htmlFor="part-search">{t("serviceHistory.searchPart")}</label>
                     <input
                       id="part-search"
                       type="search"
                       value={partSearch}
                       onChange={(e) => setPartSearch(e.target.value)}
-                      placeholder="Search spare part…"
+                      placeholder={t("serviceHistory.searchPartPlaceholder")}
                       className={`${inputClass} py-2.5`}
                     />
                     {partSearch.trim().length > 0 ? (
                       <ul className="mt-1.5 max-h-40 overflow-y-auto rounded-xl bg-(--color-bg) p-1 shadow-md ring-1 ring-(--color-border)/50">
-                        {partKindsForChips(detail?.motorcycle_category?.slug)
-                          .filter((k) =>
-                            k.chip_label.toLowerCase().includes(partSearch.trim().toLowerCase()) ||
-                            k.display_label.toLowerCase().includes(partSearch.trim().toLowerCase()),
-                          )
-                          .slice(0, 8)
-                          .map((kind) => {
+                        {(() => {
+                          // Ekstrak lookup+filter jadi helper lokal supaya
+                          // kita bisa cari di locale aktif (t()) tanpa
+                          // duplikasi logic — matching by chip_label + display
+                          // label yang sudah ter-translate.
+                          const q = partSearch.trim().toLowerCase();
+                          const matched = partKindsForChips(detail?.motorcycle_category?.slug).filter(
+                            (k) =>
+                              t(k.chip_label_key).toLowerCase().includes(q) ||
+                              t(k.display_label_key).toLowerCase().includes(q),
+                          );
+                          if (matched.length === 0) {
+                            return (
+                              <li className="px-3 py-2 text-xs text-(--color-text-muted)">
+                                {t("serviceHistory.noMatchingParts")}
+                              </li>
+                            );
+                          }
+                          return matched.slice(0, 8).map((kind) => {
                             const used = partLines.some((r) => r.kind_slug === kind.slug);
                             return (
                               <li key={kind.slug}>
@@ -1715,27 +1740,22 @@ export default function ServiceHistoryPage() {
                                   }`}
                                 >
                                   <span aria-hidden>{kind.icon}</span>
-                                  {kind.chip_label}
-                                  {used ? <span className="ml-auto text-[10px]">added</span> : null}
+                                  {t(kind.chip_label_key)}
+                                  {used ? <span className="ml-auto text-[10px]">{t("serviceHistory.added")}</span> : null}
                                 </button>
                               </li>
                             );
-                          })}
-                        {partKindsForChips(detail?.motorcycle_category?.slug).filter((k) =>
-                          k.chip_label.toLowerCase().includes(partSearch.trim().toLowerCase()) ||
-                          k.display_label.toLowerCase().includes(partSearch.trim().toLowerCase()),
-                        ).length === 0 ? (
-                          <li className="px-3 py-2 text-xs text-(--color-text-muted)">No matching parts</li>
-                        ) : null}
+                          });
+                        })()}
                       </ul>
                     ) : null}
                   </div>
 
                   {partLines.length === 0 ? (
                     <div className="rounded-xl border border-dashed border-(--color-border) bg-(--color-surface)/50 px-4 py-6 text-center">
-                      <p className="text-sm font-bold text-(--color-text)">No service items yet</p>
+                      <p className="text-sm font-bold text-(--color-text)">{t("serviceHistory.noItemsYet")}</p>
                       <p className="mt-1 text-xs text-(--color-text-secondary)">
-                        Upload a receipt or add an item manually.
+                        {t("serviceHistory.noItemsHint")}
                       </p>
                     </div>
                   ) : (
@@ -1760,7 +1780,7 @@ export default function ServiceHistoryPage() {
                                   className="min-w-0 flex-1 text-left"
                                 >
                                   <p className="truncate text-sm font-semibold text-(--color-text)">
-                                    {line.name.trim() || "Untitled item"}
+                                    {line.name.trim() || t("serviceHistory.untitledItem")}
                                   </p>
                                   <p className="mt-0.5 text-[11px] tabular-nums text-(--color-text-secondary)">
                                     Qty {line.qty || "1"}
@@ -1772,7 +1792,7 @@ export default function ServiceHistoryPage() {
                                   onClick={() => removePart(line.key)}
                                   disabled={isRemoving}
                                   className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-(--color-text-muted) hover:text-red-500 ${btnPress}`}
-                                  aria-label="Delete item"
+                                  aria-label={t("serviceHistory.deleteItem")}
                                 >
                                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
                                     <path d="M3 6h18M8 6V4h8v2m-9 4v10m10-10v10M10 11v6M14 11v6" strokeLinecap="round" />
@@ -1787,14 +1807,14 @@ export default function ServiceHistoryPage() {
                                     onClick={() => setExpandedPartKey(null)}
                                     className="text-[11px] font-bold text-(--color-primary)"
                                   >
-                                    Done
+                                    {t("serviceHistory.done")}
                                   </button>
                                   <button
                                     type="button"
                                     onClick={() => removePart(line.key)}
                                     className="text-[11px] font-semibold text-red-500"
                                   >
-                                    Delete
+                                    {t("common.delete")}
                                   </button>
                                 </div>
                                 <input
@@ -1807,13 +1827,13 @@ export default function ServiceHistoryPage() {
                                       ),
                                     )
                                   }
-                                  placeholder="Description"
+                                  placeholder={t("serviceHistory.description")}
                                   className={`${inputClass} px-3 py-2`}
                                   autoFocus
                                 />
                                 <div className="grid grid-cols-[4.5rem_minmax(0,1fr)_minmax(0,1fr)] gap-2">
                                   <div>
-                                    <label className="mb-0.5 block text-[10px] font-bold text-(--color-text-muted)">Qty</label>
+                                    <label className="mb-0.5 block text-[10px] font-bold text-(--color-text-muted)">{t("serviceHistory.qty")}</label>
                                     <input
                                       type="text"
                                       inputMode="numeric"
@@ -1836,13 +1856,13 @@ export default function ServiceHistoryPage() {
                                     />
                                   </div>
                                   <div>
-                                    <label className="mb-0.5 block text-[10px] font-bold text-(--color-text-muted)">Unit price</label>
+                                    <label className="mb-0.5 block text-[10px] font-bold text-(--color-text-muted)">{t("serviceHistory.unitPrice")}</label>
                                     <div className="relative">
                                       <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-(--color-text-muted)">Rp</span>
                                       <input
                                         type="text"
                                         inputMode="numeric"
-                                        value={formatThousandsId(line.unit_price)}
+                                        value={formatThousandsId(line.unit_price, formatNumber)}
                                         onChange={(e) => {
                                           const unit_price = digitsOnly(e.target.value, 12);
                                           setPartLines((rows) =>
@@ -1863,7 +1883,7 @@ export default function ServiceHistoryPage() {
                                     </div>
                                   </div>
                                   <div>
-                                    <p className="mb-0.5 text-[10px] font-bold text-(--color-text-muted)">Total</p>
+                                    <p className="mb-0.5 text-[10px] font-bold text-(--color-text-muted)">{t("serviceHistory.fieldTotal")}</p>
                                     <p className="rounded-xl bg-(--color-surface-alt) px-2 py-2 text-right text-sm font-bold tabular-nums text-(--color-text-secondary) ring-1 ring-(--color-border)/40">
                                       {totalNum > 0 ? formatIdr(totalNum) : "—"}
                                     </p>
@@ -1886,17 +1906,17 @@ export default function ServiceHistoryPage() {
                     }}
                     className={`flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-(--color-border) bg-(--color-surface)/40 px-4 py-3 text-xs font-bold text-(--color-text-secondary) hover:border-(--color-primary)/40 hover:text-(--color-primary) ${btnPress}`}
                   >
-                    + Add Manual Item
+                    {t("serviceHistory.addManualItem")}
                   </button>
 
                   <div>
-                    <label className="text-[10px] font-bold text-(--color-text-muted)">Notes</label>
+                    <label className="text-[10px] font-bold text-(--color-text-muted)">{t("serviceHistory.notes")}</label>
                     <textarea
                       value={form.description}
                       onChange={(e) => setForm({ ...form, description: e.target.value })}
                       rows={2}
                       className={`${inputClass} mt-1.5 resize-none`}
-                      placeholder="Optional notes…"
+                      placeholder={t("serviceHistory.notesPlaceholder")}
                     />
                   </div>
                 </section>
@@ -1906,10 +1926,10 @@ export default function ServiceHistoryPage() {
                 <div className="mb-3 flex items-end justify-between gap-3">
                   <div>
                     <p className="text-[10px] font-bold uppercase tracking-wide text-(--color-text-muted)">
-                      Summary
+                      {t("serviceHistory.summary")}
                     </p>
                     <p className="mt-0.5 text-xs font-semibold text-(--color-text-secondary)">
-                      {normalizePartLines(partLines).length} items detected
+                      {t("serviceHistory.itemsDetected", { n: normalizePartLines(partLines).length })}
                     </p>
                   </div>
                   <p className="text-base font-extrabold tabular-nums text-(--color-primary)">
@@ -1929,7 +1949,11 @@ export default function ServiceHistoryPage() {
                   disabled={saveDisabled || ocrPhase === "processing"}
                   className={`w-full rounded-xl bg-(--color-primary) py-3.5 text-sm font-bold text-white shadow-md shadow-(--color-primary)/25 transition-all duration-200 hover:brightness-110 hover:shadow-lg ${btnPress} ${btnDisabled}`}
                 >
-                  {saving ? "Saving…" : editingId ? "Save changes" : "Save Service"}
+                  {saving
+                    ? t("vehicles.submitting")
+                    : editingId
+                      ? t("vehicles.submitSave")
+                      : t("serviceHistory.saveService")}
                 </button>
               </div>
             </form>
@@ -1950,7 +1974,7 @@ export default function ServiceHistoryPage() {
             style={{
               opacity: Math.max(0.08, 0.4 * (1 - Math.min(1, detailDragY / 260))),
             }}
-            aria-label="Tutup"
+            aria-label={t("common.close")}
             onClick={closeDetailSheet}
           />
           <div
@@ -1973,7 +1997,7 @@ export default function ServiceHistoryPage() {
               </div>
               <div className="flex items-start justify-between gap-3 px-5 py-3 sm:py-4">
                 <h3 id="service-detail-title" className="text-lg font-extrabold text-(--color-text)">
-                  Detail servis
+                  {t("serviceHistory.detailTitle")}
                 </h3>
                 <div className="flex shrink-0 items-center gap-1.5">
                   <button
@@ -1984,7 +2008,7 @@ export default function ServiceHistoryPage() {
                       openEditModal(r);
                     }}
                     className={`flex h-9 w-9 items-center justify-center rounded-lg bg-(--color-primary-soft) text-(--color-primary) transition-colors duration-150 hover:brightness-95 ${btnPress}`}
-                    aria-label="Ubah riwayat servis"
+                    aria-label={t("serviceHistory.editHistoryAria")}
                   >
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
@@ -2006,7 +2030,7 @@ export default function ServiceHistoryPage() {
                     type="button"
                     onClick={() => requestDeleteRecord(selectedRecord)}
                     className={`flex h-9 w-9 items-center justify-center rounded-lg bg-red-50 text-red-500 transition-colors duration-150 hover:bg-red-100 dark:bg-red-900/15 dark:text-red-400 dark:hover:bg-red-900/30 ${btnPress}`}
-                    aria-label="Hapus riwayat servis"
+                    aria-label={t("serviceHistory.deleteHistoryAria")}
                   >
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
@@ -2032,7 +2056,7 @@ export default function ServiceHistoryPage() {
                 <dl className="grid grid-cols-2 gap-px bg-(--color-border)/40">
                   <div className="bg-(--color-surface) px-3.5 py-3">
                     <dt className="text-[10px] font-bold uppercase tracking-[0.12em] text-(--color-text-muted)">
-                      Tanggal
+                      {t("serviceHistory.fieldDate")}
                     </dt>
                     <dd className="mt-1 text-[13px] font-semibold tracking-tight text-(--color-text)">
                       {formatServiceDate(selectedRecord.serviced_at)}
@@ -2040,7 +2064,7 @@ export default function ServiceHistoryPage() {
                   </div>
                   <div className="bg-(--color-surface) px-3.5 py-3">
                     <dt className="text-[10px] font-bold uppercase tracking-[0.12em] text-(--color-text-muted)">
-                      KM
+                      {t("serviceHistory.fieldKm")}
                     </dt>
                     <dd className="mt-1 font-mono text-[13px] font-semibold tracking-tight text-(--color-text) tabular-nums">
                       {formatKm(selectedRecord.mileage_at_service)}
@@ -2052,7 +2076,7 @@ export default function ServiceHistoryPage() {
                     }`}
                   >
                     <dt className="text-[10px] font-bold uppercase tracking-[0.12em] text-(--color-text-muted)">
-                      Jenis
+                      {t("serviceHistory.fieldType")}
                     </dt>
                     <dd className="mt-1 text-[13px] font-semibold tracking-tight text-(--color-text)">
                       {recordTitle(selectedRecord)}
@@ -2061,7 +2085,7 @@ export default function ServiceHistoryPage() {
                   {oilChangeLabel(selectedRecord) ? (
                     <div className="bg-(--color-surface) px-3.5 py-3">
                       <dt className="text-[10px] font-bold uppercase tracking-[0.12em] text-(--color-text-muted)">
-                        Ganti oli
+                        {t("serviceHistory.fieldOilChange")}
                       </dt>
                       <dd className="mt-1.5">
                         <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-bold text-amber-700 dark:text-amber-300">
@@ -2078,7 +2102,7 @@ export default function ServiceHistoryPage() {
                 {selectedRecord.location?.trim() ? (
                   <div className="border-t border-(--color-border)/40 px-3.5 py-3">
                     <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-(--color-text-muted)">
-                      Lokasi
+                      {t("serviceHistory.fieldLocation")}
                     </p>
                     <p className="mt-1 inline-flex items-start gap-1.5 break-words text-[13px] font-semibold tracking-tight text-(--color-text)">
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 h-4 w-4 shrink-0 text-(--color-text-muted)" aria-hidden>
@@ -2093,7 +2117,7 @@ export default function ServiceHistoryPage() {
                 {selectedRecord.description?.trim() ? (
                   <div className="border-t border-(--color-border)/40 px-3.5 py-3">
                     <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-(--color-text-muted)">
-                      Catatan
+                      {t("serviceHistory.fieldNotes")}
                     </p>
                     <p className="mt-1 whitespace-pre-line break-words text-[13px] leading-relaxed tracking-tight text-(--color-text-secondary)">
                       {selectedRecord.description}
@@ -2105,10 +2129,10 @@ export default function ServiceHistoryPage() {
                   <div className="flex items-center justify-between gap-3 border-t border-(--color-border)/40 px-3.5 py-3">
                     <div className="min-w-0">
                       <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-(--color-text-muted)">
-                        Nota penjualan
+                        {t("serviceHistory.receiptTitle")}
                       </p>
                       <p className="mt-0.5 truncate text-[12px] font-medium text-(--color-text-secondary)">
-                        Bukti servis tersimpan
+                        {t("serviceHistory.receiptSaved")}
                       </p>
                     </div>
                     <button
@@ -2131,7 +2155,7 @@ export default function ServiceHistoryPage() {
                           } catch (err) {
                             preview?.close();
                             toast.error(
-                              err instanceof Error ? err.message : "Gagal membuka nota",
+                              describeAppError(err, t("serviceHistory.ocrReadFailed")),
                             );
                           }
                         })();
@@ -2150,7 +2174,7 @@ export default function ServiceHistoryPage() {
                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                         <path d="M14 2v6h6" />
                       </svg>
-                      Invoice
+                      {t("serviceHistory.invoice")}
                     </button>
                   </div>
                 ) : null}
@@ -2160,7 +2184,7 @@ export default function ServiceHistoryPage() {
               {selectedRecord.parts.length > 0 ? (
                 <section>
                   <h4 className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-(--color-text-muted)">
-                    Part &amp; biaya
+                    {t("serviceHistory.partsAndCost")}
                   </h4>
                   <div className="overflow-hidden rounded-2xl bg-(--color-surface) ring-1 ring-(--color-border)/45">
                     <ul className="divide-y divide-(--color-border)/45">
@@ -2198,7 +2222,7 @@ export default function ServiceHistoryPage() {
                     </ul>
                     <div className="flex items-baseline justify-between gap-4 border-t border-(--color-border)/55 bg-(--color-surface-alt)/80 px-3.5 py-3">
                       <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-(--color-text-secondary)">
-                        Total
+                        {t("serviceHistory.fieldTotal")}
                       </span>
                       <span className="text-right font-mono text-[15px] font-bold tracking-tight text-(--color-primary) tabular-nums">
                         {formatIdr(sumParts(selectedRecord.parts))}
@@ -2215,7 +2239,7 @@ export default function ServiceHistoryPage() {
                 onClick={closeDetailSheet}
                 className={`w-full rounded-xl border border-(--color-border) bg-(--color-surface-alt) py-3 text-sm font-bold text-(--color-text) hover:bg-(--color-surface) ${btnPress}`}
               >
-                Tutup
+                {t("common.close")}
               </button>
             </div>
           </div>
@@ -2224,14 +2248,17 @@ export default function ServiceHistoryPage() {
 
       <ConfirmDialog
         open={!!pendingDeleteRecord}
-        title="Hapus riwayat servis?"
+        title={t("serviceHistory.deleteTitle")}
         message={
           pendingDeleteRecord
-            ? `Riwayat servis ${formatServiceDate(pendingDeleteRecord.serviced_at)} (KM ${formatKm(pendingDeleteRecord.mileage_at_service)}) akan dihapus permanen. Tindakan ini tidak bisa dibatalkan.`
+            ? t("serviceHistory.deleteMessage", {
+                date: formatServiceDate(pendingDeleteRecord.serviced_at),
+                km: formatKm(pendingDeleteRecord.mileage_at_service),
+              })
             : ""
         }
-        confirmLabel={deletingRecord ? "Menghapus…" : "Hapus"}
-        cancelLabel="Batal"
+        confirmLabel={deletingRecord ? t("serviceHistory.deleting") : t("common.delete")}
+        cancelLabel={t("common.cancel")}
         variant="danger"
         onConfirm={() => void confirmDeleteRecord()}
         onCancel={() => {

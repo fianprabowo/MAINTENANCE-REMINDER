@@ -6,6 +6,35 @@ import { getReminderPreset, type ReminderPresetSlug } from "@/lib/reminder-prese
 import { computeNextOccurrence, type ScheduleSpec } from "@/lib/reminder-schedule";
 import type { Reminder } from "@/lib/types";
 
+/**
+ * Stable error codes untuk validation failures di service ini. UI harus
+ * catch `ReminderValidationError` lalu translate via `t(\`reminderError.${code}\`)`.
+ * Jangan pakai `err.message` langsung — itu debug-only (English) supaya
+ * legacy code yang render `err.message` masih memberi info walaupun tidak
+ * ter-translate.
+ */
+export type ReminderErrorCode =
+  | "unknown_preset"
+  | "no_km_or_schedule"
+  | "target_km_too_low"
+  | "km_interval_positive"
+  | "once_at_missing"
+  | "weekly_no_days"
+  | "monthly_dom_out_of_range";
+
+export class ReminderValidationError extends Error {
+  readonly code: ReminderErrorCode;
+  readonly params: Record<string, string | number>;
+
+  constructor(code: ReminderErrorCode, params: Record<string, string | number> = {}) {
+    // `message` sengaja English & debug-oriented — bukan untuk end user.
+    super(`reminder validation failed: ${code}`);
+    this.name = "ReminderValidationError";
+    this.code = code;
+    this.params = params;
+  }
+}
+
 export async function fetchRemindersForVehicle(vehicleId: string): Promise<Reminder[]> {
   const user = await requireUser();
 
@@ -118,11 +147,13 @@ export async function deleteReminderForVehicle(reminderId: string): Promise<void
 
 async function buildReminderPayload(vehicleId: string, input: ReminderInput) {
   const preset = getReminderPreset(input.preset_slug);
-  if (!preset) throw new Error(`Preset reminder tidak dikenal: ${input.preset_slug}`);
+  if (!preset) {
+    throw new ReminderValidationError("unknown_preset", { slug: input.preset_slug });
+  }
 
   const hasSchedule = !!input.schedule;
   if (!input.use_km && !hasSchedule) {
-    throw new Error("Pilih minimal satu: KM atau jadwal waktu");
+    throw new ReminderValidationError("no_km_or_schedule");
   }
 
   const lastKm = await getLatestMileageKm(vehicleId);
@@ -135,15 +166,19 @@ async function buildReminderPayload(vehicleId: string, input: ReminderInput) {
   if (input.use_km) {
     if (typeof input.target_km === "number") {
       if (input.target_km <= lastKm) {
-        throw new Error(
-          `Target KM (${input.target_km.toLocaleString("id-ID")}) harus lebih besar dari KM saat ini (${lastKm.toLocaleString("id-ID")})`,
-        );
+        // Params numeric — biar UI bisa format ulang pakai `formatNumber()`.
+        throw new ReminderValidationError("target_km_too_low", {
+          targetKm: input.target_km,
+          currentKm: lastKm,
+        });
       }
       nextDueKm = input.target_km;
       kmInterval = input.target_km - lastKm;
     } else {
       kmInterval = input.km_interval ?? preset.km;
-      if (kmInterval <= 0) throw new Error("KM interval harus lebih dari 0");
+      if (kmInterval <= 0) {
+        throw new ReminderValidationError("km_interval_positive");
+      }
       nextDueKm = lastKm + kmInterval;
     }
   }
@@ -194,7 +229,7 @@ function normalizeSchedule(spec: ScheduleSpec | null): NormalizedSchedule {
   }
   switch (spec.kind) {
     case "once":
-      if (!spec.once_at) throw new Error("Tanggal reminder belum dipilih");
+      if (!spec.once_at) throw new ReminderValidationError("once_at_missing");
       return {
         spec,
         kind: "once",
@@ -207,7 +242,7 @@ function normalizeSchedule(spec: ScheduleSpec | null): NormalizedSchedule {
     case "weekly": {
       const days = (spec.weekdays ?? []).filter((d) => d >= 0 && d <= 6);
       const unique = Array.from(new Set(days));
-      if (unique.length === 0) throw new Error("Pilih minimal satu hari untuk jadwal mingguan");
+      if (unique.length === 0) throw new ReminderValidationError("weekly_no_days");
       return {
         spec: { kind: "weekly", weekdays: unique },
         kind: "weekly",
@@ -219,7 +254,7 @@ function normalizeSchedule(spec: ScheduleSpec | null): NormalizedSchedule {
     case "monthly": {
       const dom = spec.day_of_month;
       if (!dom || dom < 1 || dom > 31) {
-        throw new Error("Pilih tanggal 1–31 untuk jadwal bulanan");
+        throw new ReminderValidationError("monthly_dom_out_of_range");
       }
       return {
         spec,

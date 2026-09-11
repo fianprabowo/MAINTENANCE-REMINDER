@@ -1,13 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation, type TranslationKey } from "@/lib/i18n";
 import {
   clampCropPosition,
   cropCanvas,
   type CropRect,
   type OdometerScanPreview,
 } from "@/lib/odometer-image";
-import { scanOdometerFromCanvas, type ScanProgress } from "@/lib/odometer-scan";
+import {
+  OdometerScanError,
+  scanOdometerFromCanvas,
+  type ScanProgress,
+} from "@/lib/odometer-scan";
 import type { OdometerConfidence } from "@/lib/odometer-normalize";
 import { validateOdometerImage, type ValidationResult } from "@/lib/odometer-validate";
 import { toast } from "sonner";
@@ -99,18 +104,21 @@ export type OdometerScanFlowProps = {
   onRetake: (source: "camera" | "gallery") => void;
 };
 
-const SCAN_MESSAGES: Record<ScanProgress, string> = {
-  validating: "Memeriksa kualitas foto…",
-  scanning: "Membaca angka dengan AI…",
-  processing: "Menyusun hasil…",
-};
-
 export default function OdometerScanFlow({
   preview,
   onClose,
   onDetected,
   onRetake,
 }: OdometerScanFlowProps) {
+  const { t, formatNumber } = useTranslation();
+  const scanMessages = useMemo<Record<ScanProgress, string>>(
+    () => ({
+      validating: t("odometerScanModal.validating"),
+      scanning: t("odometerScanModal.scanning"),
+      processing: t("odometerScanModal.processing"),
+    }),
+    [t],
+  );
   const cropSizeRef = useRef({ w: preview.crop.w, h: preview.crop.h });
   const [crop, setCrop] = useState<CropRect>(preview.crop);
   const [view, setView] = useState<ViewState>({ panX: 0, panY: 0, scale: 1 });
@@ -348,11 +356,11 @@ export default function OdometerScanFlow({
     }
 
     setStep("scanning");
-    setScanMessage(SCAN_MESSAGES.validating);
+    setScanMessage(scanMessages.validating);
 
     try {
       const scan = await scanOdometerFromCanvas(sourceCanvas, crop, (progress) => {
-        setScanMessage(SCAN_MESSAGES[progress]);
+        setScanMessage(scanMessages[progress]);
       });
       const km = String(scan.km);
       setDetectedKm(km);
@@ -360,10 +368,17 @@ export default function OdometerScanFlow({
       onDetected(km);
       setStep("done");
       if (scan.confidence === "low") {
-        toast.warning("AI kurang yakin. Bandingkan foto dengan angka di field KM.");
+        toast.warning(t("odometerScanModal.lowConfidence"));
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Gagal membaca odometer");
+      // Translate structured `OdometerScanError` codes ke pesan locale user.
+      // Sengaja tidak render `err.message` mentah karena bisa jadi debug
+      // string Bahasa Indonesia dari server route (mis. GEMINI config).
+      if (err instanceof OdometerScanError) {
+        toast.error(t(`odometerScanError.${err.code}` as TranslationKey));
+      } else {
+        toast.error(t("odometerScanModal.readFailed"));
+      }
       setStep("crop");
     }
   };
@@ -377,16 +392,16 @@ export default function OdometerScanFlow({
           <span className="h-9 w-9 animate-spin rounded-full border-[3px] border-(--color-border) border-t-(--color-primary)" />
           <p className="mt-3 text-sm font-bold">{scanMessage}</p>
           <p className="mt-1 text-center text-xs text-(--color-text-muted)">
-            Proses biasanya 3–8 detik
+            {t("odometerScanModal.usuallySeconds")}
           </p>
         </div>
       ) : null}
 
       <div className="mb-3 flex items-center justify-between gap-2">
         <h3 className="text-sm font-bold">
-          {step === "crop" && "Sesuaikan posisi foto"}
-          {step === "validation_failed" && "Perbaiki foto"}
-          {step === "done" && "Bandingkan angka"}
+          {step === "crop" && t("odometerScanModal.adjustPhoto")}
+          {step === "validation_failed" && t("odometerScanModal.fixPhoto")}
+          {step === "done" && t("odometerScanModal.compareNumbers")}
         </h3>
         {!isBusy && step !== "done" ? (
           <button
@@ -394,7 +409,7 @@ export default function OdometerScanFlow({
             onClick={onClose}
             className="shrink-0 text-xs font-semibold text-(--color-text-muted) hover:text-(--color-text)"
           >
-            Batal
+            {t("odometerScanModal.cancel")}
           </button>
         ) : null}
       </div>
@@ -415,7 +430,7 @@ export default function OdometerScanFlow({
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={sourceCanvas.toDataURL("image/jpeg", 0.85)}
-              alt="Pratinjau foto odometer"
+              alt={t("odometerScanModal.previewAlt")}
               draggable={false}
               className="pointer-events-none absolute max-w-none"
               style={{
@@ -428,14 +443,14 @@ export default function OdometerScanFlow({
               }}
             />
             <p className="pointer-events-none absolute inset-x-0 bottom-0 bg-linear-to-t from-black/75 to-transparent px-3 pt-6 pb-2 text-center text-[10px] leading-snug text-white/90">
-              Geser · pinch/zoom — posisikan baris angka odometer
+              {t("odometerScanModal.dragHint")}
             </p>
           </>
         ) : croppedPreviewUrl ? (
           /* eslint-disable-next-line @next/next/no-img-element */
           <img
             src={croppedPreviewUrl}
-            alt="Area odometer yang dibaca"
+            alt={t("odometerScanModal.cropAlt")}
             className="max-h-full w-full object-contain p-2"
           />
         ) : null}
@@ -452,7 +467,7 @@ export default function OdometerScanFlow({
                   : "bg-amber-500/10 text-amber-800 dark:text-amber-300"
               }`}
             >
-              {issue.message}
+              {t(issue.messageKey)}
             </li>
           ))}
         </ul>
@@ -461,22 +476,22 @@ export default function OdometerScanFlow({
       {step === "done" ? (
         <div className="mt-3 space-y-1">
           <p className="text-sm text-(--color-text-secondary)">
-            AI membaca:{" "}
+            {t("odometerScanModal.aiRead")}{" "}
             <span className="font-bold tabular-nums text-(--color-text)">
-              {parseInt(detectedKm, 10).toLocaleString("id-ID")} km
+              {formatNumber(parseInt(detectedKm, 10))} km
             </span>
           </p>
           {confidence === "low" ? (
             <p className="text-xs text-red-700 dark:text-red-400">
-              Hasil kurang yakin — periksa dengan teliti sebelum Simpan.
+              {t("odometerScanModal.lowConfidenceCheck")}
             </p>
           ) : confidence === "medium" ? (
             <p className="text-xs text-amber-700 dark:text-amber-400">
-              Periksa angka di field KM, lalu tekan Simpan.
+              {t("odometerScanModal.mediumConfidenceCheck")}
             </p>
           ) : (
             <p className="text-xs text-(--color-text-muted)">
-              Bandingkan dengan field KM di atas, lalu tekan Simpan.
+              {t("odometerScanModal.highConfidenceCheck")}
             </p>
           )}
         </div>
@@ -494,14 +509,14 @@ export default function OdometerScanFlow({
                 }}
                 className="flex-1 rounded-xl border border-(--color-border) py-2.5 text-xs font-semibold"
               >
-                Geser foto
+                {t("odometerScanModal.adjustPhotoBtn")}
               </button>
               <button
                 type="button"
                 onClick={() => onRetake("camera")}
                 className="flex-[1.4] rounded-xl bg-(--color-primary) py-2.5 text-xs font-bold text-white"
               >
-                Foto ulang
+                {t("odometerScanModal.retakePhoto")}
               </button>
             </div>
             <button
@@ -509,7 +524,7 @@ export default function OdometerScanFlow({
               onClick={() => onRetake("gallery")}
               className="rounded-xl border border-dashed border-(--color-border) py-2 text-xs font-semibold text-(--color-text-secondary)"
             >
-              Pilih dari galeri
+              {t("odometerScanModal.pickFromGallery")}
             </button>
           </>
         ) : step === "done" ? (
@@ -522,14 +537,14 @@ export default function OdometerScanFlow({
               }}
               className="flex-1 rounded-xl border border-(--color-border) py-2.5 text-xs font-semibold"
             >
-              Scan ulang
+              {t("odometerScanModal.rescan")}
             </button>
             <button
               type="button"
               onClick={onClose}
               className="flex-[1.4] rounded-xl bg-(--color-primary) py-2.5 text-xs font-bold text-white"
             >
-              Tutup
+              {t("odometerScanModal.close")}
             </button>
           </div>
         ) : (
@@ -540,7 +555,7 @@ export default function OdometerScanFlow({
               onClick={onClose}
               className="flex-1 rounded-xl border border-(--color-border) py-2.5 text-xs font-semibold disabled:opacity-50"
             >
-              Batal
+              {t("odometerScanModal.cancel")}
             </button>
             <button
               type="button"
@@ -548,7 +563,7 @@ export default function OdometerScanFlow({
               onClick={() => void runScan()}
               className="flex-[1.4] rounded-xl bg-(--color-primary) py-2.5 text-xs font-bold text-white disabled:opacity-60"
             >
-              Baca angka
+              {t("odometerScanModal.readDigits")}
             </button>
           </div>
         )}

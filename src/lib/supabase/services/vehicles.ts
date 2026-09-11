@@ -10,6 +10,7 @@ import {
 import { requireUser } from "../auth-helpers";
 import { fetchMileageHistory } from "./mileage";
 import { pickLatestEngineOil, pickLatestGearboxOil } from "@/lib/oil-utils";
+import { AppError } from "@/lib/errors";
 import type {
   MotorcycleCategory,
   ServiceRecord,
@@ -184,10 +185,10 @@ export async function recordVehicleFuelFill(
 ): Promise<Vehicle> {
   const user = await requireUser();
   const km = Math.round(input.mileage_at_fill);
-  if (!Number.isFinite(km) || km < 0) throw new Error("KM saat isi tidak valid");
+  if (!Number.isFinite(km) || km < 0) throw new AppError("invalid_km_at_fill");
 
   const { data: v } = await supabase.from("vehicles").select("id, user_id").eq("id", vehicleId).maybeSingle();
-  if (!v || v.user_id !== user.id) throw new Error("Kendaraan tidak ditemukan");
+  if (!v || v.user_id !== user.id) throw new AppError("vehicle_not_found");
 
   const filledAt = input.filled_at ?? new Date().toISOString();
   const tankFull = input.tank_full !== false;
@@ -215,7 +216,7 @@ export async function updateVehicleFuelLevel(vehicleId: string, fuelLevelPercent
   const level = Math.min(100, Math.max(0, Math.round(fuelLevelPercent)));
 
   const { data: v } = await supabase.from("vehicles").select("id, user_id").eq("id", vehicleId).maybeSingle();
-  if (!v || v.user_id !== user.id) throw new Error("Kendaraan tidak ditemukan");
+  if (!v || v.user_id !== user.id) throw new AppError("vehicle_not_found");
 
   const { data, error } = await supabase
     .from("vehicles")
@@ -243,23 +244,23 @@ export async function updateVehicleFuelConfig(
   const user = await requireUser();
 
   const { data: v } = await supabase.from("vehicles").select("id, user_id").eq("id", vehicleId).maybeSingle();
-  if (!v || v.user_id !== user.id) throw new Error("Kendaraan tidak ditemukan");
+  if (!v || v.user_id !== user.id) throw new AppError("vehicle_not_found");
 
   const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (input.tank_capacity_l != null) {
     if (!Number.isFinite(input.tank_capacity_l) || input.tank_capacity_l <= 0) {
-      throw new Error("Kapasitas tangki harus > 0 L");
+      throw new AppError("tank_capacity_positive");
     }
     update.tank_capacity_l = input.tank_capacity_l;
   }
   if (input.fuel_efficiency_km_l != null) {
     if (!Number.isFinite(input.fuel_efficiency_km_l) || input.fuel_efficiency_km_l <= 0) {
-      throw new Error("Efisiensi harus > 0 km/L");
+      throw new AppError("fuel_efficiency_positive");
     }
     update.fuel_efficiency_km_l = input.fuel_efficiency_km_l;
   }
   if (Object.keys(update).length === 1) {
-    throw new Error("Tidak ada perubahan untuk disimpan");
+    throw new AppError("no_changes_to_save");
   }
 
   const { data, error } = await supabase

@@ -10,18 +10,20 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { MileageLog } from "@/lib/types";
+import { useTranslation } from "@/lib/i18n";
 
 interface MileageChartProps {
   logs: MileageLog[];
 }
 
 export default function MileageChart({ logs }: MileageChartProps) {
+  const { t, formatDate } = useTranslation();
   if (!logs || logs.length < 2) {
     return (
       <div className="py-8 text-center">
         <div className="mb-2 text-3xl">📈</div>
         <p className="text-sm text-(--color-text-muted)">
-          Need at least 2 data points to show chart.
+          {t("mileageChart.noData")}
         </p>
       </div>
     );
@@ -30,7 +32,9 @@ export default function MileageChart({ logs }: MileageChartProps) {
   const data = [...logs]
     .reverse()
     .map((log) => ({
-      date: new Date(log.created_at).toLocaleDateString("en-US", {
+      // Sumbu X pakai format tanggal locale — otomatis Bahasa Indonesia
+      // ketika user pilih Indonesia (mis. "5 Jun" vs "Jun 5").
+      date: formatDate(log.created_at, {
         month: "short",
         day: "numeric",
       }),
