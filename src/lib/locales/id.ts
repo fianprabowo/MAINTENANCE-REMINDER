@@ -10,12 +10,13 @@ import type en from "./en";
  */
 const id: typeof en = {
   common: {
-    appName: "Pengingat Servis",
+    appName: "RISMA",
     loading: "Memuat...",
     cancel: "Batal",
     confirm: "Konfirmasi",
     save: "Simpan",
     close: "Tutup",
+    closeDialog: "Tutup dialog",
     back: "Kembali",
     next: "Lanjut",
     continue: "Lanjutkan",
@@ -64,11 +65,13 @@ const id: typeof en = {
     errorEmpty: "Silakan masukkan kode akses.",
     errorInvalid: "Kode akses tidak valid. Periksa dan coba lagi.",
     errorInvalidResponse: "Respon server tidak valid.",
+    errorSessionFailed: "Gagal membuat sesi. Silakan coba lagi.",
     noCode: "Belum punya kode akses?",
     contactSupport: "Hubungi support",
   },
 
   login: {
+    /* Legacy keys — untuk email/password auth (kalau nanti di-restore). */
     title: "Selamat Datang Kembali",
     subtitle: "Masuk untuk memantau servis kendaraan Anda",
     identifierPlaceholder: "Email atau nomor telepon *",
@@ -81,6 +84,17 @@ const id: typeof en = {
     errorPassword: "Kata sandi wajib diisi",
     noAccount: "Belum punya akun?",
     signUp: "Daftar",
+
+    /* Access-code redesign copy.
+     * `brandFullName` sengaja English di semua locale — kepanjangan acronym
+     * (lihat komentar detail di `en.ts`). */
+    brandTitle: "RISMA",
+    brandFullName: "Ride Inspection Smart Management App",
+    codePlaceholder: "Kode akses",
+    showCode: "Tampilkan kode",
+    hideCode: "Sembunyikan kode",
+    noCode: "Belum punya kode?",
+    contactSupport: "Hubungi support",
   },
 
   register: {
@@ -187,6 +201,12 @@ const id: typeof en = {
     darkMode: "Mode Gelap",
     darkModeOn: "Aktif",
     darkModeOff: "Nonaktif",
+    // Toggle warna penuh — opt-in. Default = grayscale (design intent
+    // dari sweep audit). Copy explicit "badge & tombol berwarna" supaya
+    // user paham perbedaan konkret dibanding "tema warna-warni".
+    colorMode: "Warna Penuh",
+    colorModeOn: "Badge & tombol berwarna",
+    colorModeOff: "Mode monokrom",
     language: "Bahasa",
     languageSublabel: "Pilih Bahasa",
     languageEnglish: "English",
@@ -208,6 +228,11 @@ const id: typeof en = {
     markReadFailed: "Gagal menandai dibaca",
     loadFailed: "Gagal memuat notifikasi",
     deleteFailed: "Gagal menghapus",
+    deleteTitle: "Hapus notifikasi?",
+    deleteMessage: "Notifikasi ini akan dihapus permanen dari daftar.",
+    deleteConfirm: "Hapus",
+    deleteCancel: "Batal",
+    deletingLoading: "Menghapus...",
     listHint: "Ketuk untuk buka, geser ke kiri untuk hapus.",
     ariaOpen: "Buka notifikasi {title}",
     ariaUnread: "Belum dibaca",
@@ -224,6 +249,47 @@ const id: typeof en = {
     yesterday: "Kemarin",
     daysAgo: "{n} h lalu",
     weeksAgo: "{n} mgg lalu",
+    /*
+     * Templated content untuk notifikasi. Struktur identik dengan `en.ts`
+     * — key mirror sama, string versi Bahasa Indonesia. Lihat komentar
+     * di `en.ts` untuk detail placeholder {preset}, {km}, {days},
+     * {vehicle}, {subject}.
+     */
+    copy: {
+      titles: {
+        mendekati1: "Servis sebentar lagi",
+        mendekati2: "Hampir waktunya servis",
+        mendekati3: "Bersiap untuk servis",
+        terlewat1: "Sudah waktunya servis",
+        terlewat2: "Servis sudah lewat",
+        terlewat3: "Motor butuh perhatian",
+      },
+      bodies: {
+        mendekatiKm1: "{preset} sekitar {km} km lagi",
+        mendekatiKm2: "Tinggal {km} km lagi sebelum {preset}",
+        mendekatiDays: "{preset} dijadwalkan {days} hari lagi",
+        mendekatiPersonal: "{vehicle} hampir waktunya {preset}",
+        mendekatiGeneric: "Siap-siap untuk {preset} {subject}",
+        terlewatKm: "{preset} sudah lewat {km} km",
+        terlewatDays: "{preset} terlewat {days} hari",
+        terlewatPersonal: "{vehicle} sudah waktunya {preset}",
+        terlewatGeneric: "{preset} sudah lewat — sebaiknya segera dijadwalkan",
+        fallback: "Yuk cek {subject} sekarang",
+      },
+      presetNouns: {
+        oilChange: "ganti oli",
+        regularService: "servis rutin",
+        cvt: "servis CVT",
+        brake: "ganti kampas rem",
+        battery: "ganti aki",
+        fallback: "servis",
+      },
+      subject: {
+        fallback: "Motor kamu",
+        fallbackLower: "motor kamu",
+        generic: "motor",
+      },
+    },
   },
 
   vehicles: {
@@ -279,7 +345,10 @@ const id: typeof en = {
     timelineTitle: "Timeline kilometer",
     lastUpdateAt: "Update terakhir · {when}",
     endOfHistory: "Akhir riwayat",
-    loadingMore: "Memuat lebih banyak…",
+    // Counter di bawah timeline — kasih tahu user masih ada row tersembunyi.
+    // `{shown}` = jumlah terlihat, `{total}` = jumlah data.
+    // Angka otomatis di-format lewat Intl.NumberFormat di interpolate().
+    historyPaginationCounter: "Menampilkan {shown} dari {total} · scroll untuk memuat lebih",
     notesTitle: "Catatan",
     serviceReminderTitle: "Pengingat servis",
     serviceLight: "Servis ringan",
@@ -289,7 +358,7 @@ const id: typeof en = {
     dueOn: "Jatuh tempo {date}",
     updateMileageTitle: "Perbarui kilometer",
     deleteMileageTitle: "Hapus catatan KM?",
-    deleteMileageMessage: "Catatan {km} KM akan dihapus permanen. Jika ini catatan terbaru, KM kendaraan akan turun ke catatan sebelumnya.",
+    deleteMileageMessage: "Menghapus {km} KM akan menurunkan KM kendaraan ke catatan sebelumnya jika ini catatan terbaru.",
     deleteMileageConfirm: "Hapus",
     deleteMileageCancel: "Batal",
     deletingMileage: "Menghapus…",
@@ -808,6 +877,17 @@ const id: typeof en = {
 
   mileageChart: {
     noData: "Butuh minimal 2 data untuk menampilkan grafik.",
+    // Preset waktu — pakai singkatan Indonesia ("B" = bulan, "T" = tahun)
+    // supaya native Indonesian user tidak bingung "1M" (menit? month?).
+    range1M: "1B",
+    range3M: "3B",
+    range6M: "6B",
+    range1Y: "1T",
+    rangeAll: "Semua",
+    reset: "Reset",
+    // Affordance subtle di bawah chart — kasih tahu chart bisa di-gesture.
+    // Double-tap axis label = reset (behavior built-in lightweight-charts).
+    zoomHint: "Cubit atau scroll untuk zoom · geser untuk pindah · ketuk 2x untuk reset",
   },
 
   fuelGauge: {

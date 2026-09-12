@@ -19,14 +19,27 @@ export default function FuelGauge({ level }: { level: number }) {
     <div className="relative w-full select-none" aria-label={t("fuelGauge.ariaLevel", { percent: p })}>
       <svg viewBox="0 0 220 132" className="mx-auto block h-[9.5rem] w-full max-w-[280px]" aria-hidden>
         <defs>
+          {/*
+            Arc gradient — mode-aware via `--zone-*` tokens.
+              • Grayscale mode: dark→mid→light opacity tier → fuel low
+                = darker/heavy portion (alarm), fuel full = lighter
+                portion (quiet). Urgency via visual weight.
+              • Full-color mode: red→amber→green → fuel low = red (alarm),
+                fuel full = green (safe). Urgency via hue.
+            Semantic mapping tetap sama di both modes: 0% (empty) = alarm,
+            100% (full) = safe.
+          */}
           <linearGradient id="fuelGaugeArc" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#f59e0b" />
-            <stop offset="55%" stopColor="#eab308" />
-            <stop offset="100%" stopColor="#22c55e" />
+            <stop offset="0%" stopColor="var(--zone-alarm)" />
+            <stop offset="55%" stopColor="var(--zone-warn)" />
+            <stop offset="100%" stopColor="var(--zone-safe)" />
           </linearGradient>
+          {/* Glow tetap monochrome — subtle depth cue, tidak encode urgency,
+              jadi tidak perlu mode-aware. Pakai `--color-text` supaya
+              auto-invert di dark. */}
           <linearGradient id="fuelGaugeGlow" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor="rgb(251 191 36 / 0.35)" />
-            <stop offset="100%" stopColor="rgb(34 197 94 / 0.08)" />
+            <stop offset="0%" stopColor="var(--color-text)" stopOpacity="0.18" />
+            <stop offset="100%" stopColor="var(--color-text)" stopOpacity="0.04" />
           </linearGradient>
         </defs>
 

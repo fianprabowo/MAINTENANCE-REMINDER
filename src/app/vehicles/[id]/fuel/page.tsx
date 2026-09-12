@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -13,6 +12,7 @@ import type { VehicleDetail } from "@/lib/types";
 import FuelGauge from "@/components/FuelGauge";
 import MotorFuelEstimator from "@/components/MotorFuelEstimator";
 import { DetailSkeleton } from "@/components/LoadingSkeleton";
+import { Button, IconButton, SectionLabel } from "@/components/ui";
 import { useAnimatedInt } from "@/lib/use-animated-int";
 import { useAppErrorMessage, useTranslation } from "@/lib/i18n";
 
@@ -25,32 +25,33 @@ function zoneFromFuel(p: number): Zone {
 }
 
 /**
- * Tone tokens. Hanya zona/status yang diberi warna — sisa UI sengaja netral
- * (white surface + soft shadow) sesuai brief: "Fokus warna hanya pada status".
+ * Tone tokens (full grayscale mode). Urgency di-encode via hierarchy:
+ *   - good : soft bg + secondary text        (quiet, "no action")
+ *   - warn : soft bg + full text             (medium, "monitor")
+ *   - bad  : inverted (text bg + bg text)    (loud, "action needed")
+ * Sebelumnya emerald/amber/red per zone. Sekarang single hue (--color-text)
+ * dengan opacity/weight tier untuk differentiate.
  */
+// Fuel zone tone — bad.chipBg pakai `--zone-alarm` mode-aware (red di color
+// mode, dark inverted di grayscale). good/warn tetap surface-alt karena
+// chip-nya "soft informational" style, urgency di-encode via font-weight.
 const TONE: Record<Zone, { text: string; chipBg: string; chipText: string }> = {
   good: {
-    text: "text-emerald-600 dark:text-emerald-400",
-    chipBg: "bg-emerald-50 dark:bg-emerald-900/25",
-    chipText: "text-emerald-700 dark:text-emerald-300",
+    text: "text-(--color-text-secondary)",
+    chipBg: "bg-(--color-surface-alt)",
+    chipText: "text-(--color-text-secondary) font-semibold",
   },
   warn: {
-    text: "text-amber-600 dark:text-amber-400",
-    chipBg: "bg-amber-50 dark:bg-amber-900/25",
-    chipText: "text-amber-700 dark:text-amber-300",
+    text: "text-(--color-text)",
+    chipBg: "bg-(--color-surface-alt)",
+    chipText: "text-(--color-text) font-semibold",
   },
   bad: {
-    text: "text-red-600 dark:text-red-400",
-    chipBg: "bg-red-50 dark:bg-red-900/25",
-    chipText: "text-red-700 dark:text-red-300",
+    text: "text-(--color-text) font-bold",
+    chipBg: "bg-(--zone-alarm)",
+    chipText: "text-(--color-bg) font-bold",
   },
 };
-
-const PRIMARY_BTN =
-  "inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-(--color-primary) px-4 py-3.5 text-sm font-bold text-white shadow-md shadow-(--color-primary)/30 transition-all duration-200 hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100";
-
-const GHOST_BTN =
-  "inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-(--color-border) bg-(--color-surface) px-4 py-3 text-sm font-semibold text-(--color-text) transition-all duration-200 hover:bg-(--color-surface-alt) active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100";
 
 export default function VehicleFuelPage() {
   const { id } = useParams<{ id: string }>();
@@ -184,12 +185,14 @@ export default function VehicleFuelPage() {
     <div className="min-h-screen bg-(--color-bg) px-4 pb-12 pt-5 sm:px-5">
       <div className="mx-auto w-full max-w-md">
         {/* ── Header ───────────────────────────────────────────── */}
-        <Link
-          href="/dashboard"
-          className="inline-flex items-center text-sm font-semibold text-(--color-text-secondary) transition-colors hover:text-(--color-text)"
+        <IconButton
+          label={t("common.back")}
+          variant="ghost"
+          size="lg"
+          onClick={() => router.push("/dashboard")}
         >
-          {t("fuelPage.home")}
-        </Link>
+          <BackIcon className="h-5 w-5" />
+        </IconButton>
 
         <div className="mt-4 flex items-start gap-3">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-(--color-surface) text-2xl shadow-sm ring-1 ring-(--color-border)/50">
@@ -254,9 +257,11 @@ export default function VehicleFuelPage() {
           </div>
 
           {/* Persentase kecil di bawah gauge — referensi sekunder */}
-          <p className="mt-1 text-center text-[11px] font-semibold text-(--color-text-muted)">
-            {t("fuelPage.indicator")}{" "}
-            <span className={`tabular-nums font-extrabold ${tone.text}`}>
+          <p className="mt-1 text-center">
+            <SectionLabel as="span" className="inline">
+              {t("fuelPage.indicator")}
+            </SectionLabel>{" "}
+            <span className={`text-[11px] tabular-nums font-extrabold ${tone.text}`}>
               {animatedLevel}%
             </span>
           </p>
@@ -265,21 +270,17 @@ export default function VehicleFuelPage() {
         {/* ── Single primary CTA ──────────────────────────────── */}
         {isMoto ? (
           <div className="mt-4 space-y-2">
-            <button
+            <Button
               type="button"
+              variant="primary"
+              size="lg"
+              fullWidth
+              loading={fillingNow}
               onClick={() => void handleFillNow()}
-              disabled={fillingNow}
-              className={PRIMARY_BTN}
+              leadingIcon={<FillIcon className="h-4 w-4" />}
             >
-              {fillingNow ? (
-                t("fuelPage.saving")
-              ) : (
-                <>
-                  <FillIcon className="h-4 w-4" />
-                  {t("fuelPage.fillNow")}
-                </>
-              )}
-            </button>
+              {fillingNow ? t("fuelPage.saving") : t("fuelPage.fillNow")}
+            </Button>
             {latest_mileage?.mileage == null ? (
               <p className="text-center text-[11px] text-(--color-text-muted)">
                 {t("fuelPage.noKmHint")}
@@ -299,23 +300,28 @@ export default function VehicleFuelPage() {
         {/* ── Collapsible: Detail & perhitungan ───────────────── */}
         {isMoto && motorcycle_category ? (
           <section className="mt-4">
-            <button
+            <Button
               type="button"
+              variant="secondary"
+              size="md"
+              fullWidth
               onClick={() => setDetailOpen((v) => !v)}
               aria-expanded={detailOpen}
               aria-controls="fuel-detail-panel"
-              className={`${GHOST_BTN} justify-between`}
+              className="justify-between"
+              trailingIcon={
+                <ChevronIcon
+                  className={`h-4 w-4 text-(--color-text-secondary) transition-transform duration-200 ${
+                    detailOpen ? "rotate-180" : ""
+                  }`}
+                />
+              }
             >
               <span className="flex items-center gap-2">
                 <SlidersIcon className="h-4 w-4 text-(--color-text-secondary)" />
                 {t("fuelPage.detailToggle")}
               </span>
-              <ChevronIcon
-                className={`h-4 w-4 text-(--color-text-secondary) transition-transform duration-200 ${
-                  detailOpen ? "rotate-180" : ""
-                }`}
-              />
-            </button>
+            </Button>
 
             {/*
               Grid-rows trick: animatable height tanpa mengetahui tinggi
@@ -384,6 +390,25 @@ function InertWrap({
     <div ref={ref} aria-hidden={inert}>
       {children}
     </div>
+  );
+}
+
+function BackIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+    >
+      <line x1="19" y1="12" x2="5" y2="12" />
+      <polyline points="12 19 5 12 12 5" />
+    </svg>
   );
 }
 

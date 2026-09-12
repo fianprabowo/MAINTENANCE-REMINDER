@@ -1,10 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
+import {
+  applyColorMode,
+  readColorMode,
+  syncThemeColorMeta,
+  type ColorMode,
+} from "@/lib/theme";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import { Modal, SectionLabel } from "@/components/ui";
 import {
   LOCALES,
   LOCALE_FLAGS,
@@ -84,6 +90,22 @@ function MoonIcon({ className }: { className?: string }) {
   );
 }
 
+/**
+ * Paint-palette icon untuk toggle "Full color" mode. Dipilih visual palette
+ * (bukan droplet / paint bucket) supaya distinct dari MoonIcon di baris
+ * darkMode di atas — hindari kolisi metaphor "color/theme".
+ */
+function PaletteIcon({ className }: { className?: string }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M12 2a10 10 0 1 0 0 20 2 2 0 0 0 2-2v-1a2 2 0 0 1 2-2h2a4 4 0 0 0 4-4 10 10 0 0 0-10-11z" />
+      <circle cx="7.5" cy="10.5" r="1" />
+      <circle cx="12" cy="7.5" r="1" />
+      <circle cx="16.5" cy="10.5" r="1" />
+    </svg>
+  );
+}
+
 function GlobeIcon({ className }: { className?: string }) {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -113,8 +135,15 @@ function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (v: b
         checked ? "bg-(--color-primary)" : "bg-(--color-border)"
       }`}
     >
+      {/*
+       * Knob pakai `bg-(--color-bg)` supaya auto-invert di dark mode:
+       * light: track dark (primary), knob putih (bg) → visible.
+       * dark: track near-white (primary), knob dark (bg) → visible.
+       * Sebelumnya `bg-white` — di dark mode knob & track jadi same-white
+       * jadi hilang.
+       */}
       <span
-        className={`inline-block h-5 w-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
+        className={`inline-block h-5 w-5 rounded-full bg-(--color-bg) shadow-md transition-transform duration-200 ${
           checked ? "translate-x-6" : "translate-x-1"
         }`}
       />
@@ -125,27 +154,15 @@ function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (v: b
 /**
  * Bottom-sheet dialog untuk memilih bahasa.
  *
- * Struktur & interaksi sengaja disamakan dengan `AddMileageModal`:
- *  • Portal ke `document.body` — hindari sheet "kekunci" di dalam
- *    containing block layout (`overflow-x-clip`) yang bisa membuat
- *    z-index kalah dari `BottomNav`.
- *  • Edge-to-edge di mobile (`items-end`, `rounded-t-3xl`) → center dialog
- *    di desktop (`sm:items-center`, `sm:rounded-3xl`, `sm:mx-4`).
- *  • Drag handle kecil di atas sebagai hint bottom-sheet.
- *  • Body scroll lock + Escape-to-close saat sheet terbuka.
- *  • Safe-area inset bawah supaya tombol terakhir tidak nabrak home indicator iOS.
+ * Sekarang pakai `Modal` primitive dari design system (with
+ * `enableDragToDismiss`) — semua boilerplate (portal, backdrop, scroll lock,
+ * escape close, drag gesture, focus mgmt) di-handle di sana. Component ini
+ * cuma responsibility: render locale picker cards.
  *
  * Kenapa modal daftar radio, bukan dropdown/native `<select>`?
  *  • Mobile-first — tap target besar & label lebih mudah dibaca.
  *  • Konsisten dengan `AddMileageModal` — user tidak perlu belajar interaksi baru.
  */
-/** Threshold pixel — jarak minimum drag ke bawah sebelum sheet close. */
-const DRAG_DISMISS_THRESHOLD_PX = 100;
-/** Timing untuk snap-back & slide-out. Nilainya = durasi CSS di bawah. */
-const DRAG_ANIMATION_MS = 220;
-/** Easing "iOS-ish" — decelerate cepat di awal, smooth di akhir. */
-const DRAG_EASING = "cubic-bezier(0.32, 0.72, 0, 1)";
-
 function LanguagePickerDialog({
   open,
   current,
@@ -166,191 +183,56 @@ function LanguagePickerDialog({
    */
   subtitle?: string;
 }) {
-  const { t } = useTranslation();
-  // `mounted` guard supaya `createPortal(document.body)` tidak dipanggil
-  // saat SSR (`document` undefined).
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  // ---------------------------------------------------------------------------
-  // Drag-to-dismiss gesture
-  //
-  // Kenapa manipulasi DOM langsung via ref alih-alih React state?
-  //  • Setiap pointermove akan trigger re-render kalau pakai state → laggy.
-  //  • Transform di-set inline pakai `style.transform` — GPU-accelerated & cepat.
-  //  • Pointer Events API dipakai (bukan touch events) supaya unified antara
-  //    trackpad-drag di desktop dan sentuh di mobile.
-  // ---------------------------------------------------------------------------
-  const sheetRef = useRef<HTMLDivElement>(null);
-  /** Y-koordinat saat pointer pertama turun. `null` = tidak sedang dragging. */
-  const dragStartY = useRef<number | null>(null);
-
-  /**
-   * Terapkan transform ke sheet. `animate=true` untuk snap-back / slide-out,
-   * `false` untuk mengikuti jari secara real-time (tanpa transisi supaya
-   * gerakan tidak terasa "berat").
-   */
-  const applyTransform = (y: number, animate: boolean) => {
-    const el = sheetRef.current;
-    if (!el) return;
-    el.style.transition = animate
-      ? `transform ${DRAG_ANIMATION_MS}ms ${DRAG_EASING}`
-      : "none";
-    el.style.transform = y === 0 ? "" : `translateY(${y}px)`;
-  };
-
-  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    // Jangan aktifkan drag kalau tap-nya di elemen interaktif — biar tombol
-    // "Pilih bahasa" tetap merespon tap normal, dan bukan malah nge-drag.
-    const target = e.target as HTMLElement;
-    if (target.closest("button, a, input, textarea, select, [role='button']")) {
-      return;
-    }
-    dragStartY.current = e.clientY;
-    // Cancel snap-back transition kalau user langsung drag lagi sebelum
-    // animasi selesai (mis. quick swipe up-down).
-    applyTransform(0, false);
-    try {
-      e.currentTarget.setPointerCapture(e.pointerId);
-    } catch {
-      /* pointerId sudah ter-release oleh browser — abaikan */
-    }
-  };
-
-  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (dragStartY.current === null) return;
-    const delta = e.clientY - dragStartY.current;
-    // Rubber-band ke atas: kasih user feedback bahwa arah UP tidak berguna,
-    // tapi jangan lock hard (elastic resistance ala iOS).
-    const y = delta < 0 ? -Math.min(40, Math.sqrt(-delta) * 5) : delta;
-    applyTransform(y, false);
-  };
-
-  const onPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (dragStartY.current === null) return;
-    const delta = e.clientY - dragStartY.current;
-    dragStartY.current = null;
-    try {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    } catch {
-      /* ignore */
-    }
-
-    if (delta > DRAG_DISMISS_THRESHOLD_PX) {
-      // Slide out ke bawah dulu, baru unmount lewat onClose. Kalau langsung
-      // onClose, sheet menghilang tanpa animasi (jelek untuk swipe-down).
-      applyTransform(window.innerHeight, true);
-      window.setTimeout(onClose, DRAG_ANIMATION_MS);
-    } else {
-      // Snap back ke posisi asal.
-      applyTransform(0, true);
-    }
-  };
-
-  // Body scroll lock + Escape-to-close — sama seperti `AddMileageModal`.
-  useEffect(() => {
-    if (!open) return;
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.body.style.overflow = prevOverflow;
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open, onClose]);
-
-  if (!open || !mounted) return null;
-
-  return createPortal(
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={title}
-      className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center"
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      variant="sheet"
+      ariaLabel={title}
+      enableDragToDismiss
     >
-      {/* Backdrop sebagai <button> supaya click-to-close accessible via keyboard */}
-      <button
-        type="button"
-        className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-150 hover:bg-black/45"
-        aria-label={t("common.close")}
-        onClick={onClose}
-      />
-      <div
-        ref={sheetRef}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
-        onClick={(e) => e.stopPropagation()}
-        // `touch-none` = `touch-action: none`, mencegah browser handle
-        // scroll/pinch native supaya gesture kita yang jalan. Aman di sini
-        // karena isi sheet pendek (2 pilihan) — tidak butuh scroll internal.
-        // `will-change-transform` beri hint ke browser untuk promote ke layer
-        // GPU sebelum drag dimulai (menghindari flicker pas first frame).
-        className="relative z-10 flex w-full max-w-md flex-col rounded-t-3xl bg-(--color-bg) shadow-2xl touch-none will-change-transform sm:mx-4 sm:rounded-3xl"
-      >
-        {/* Drag handle — bottom-sheet affordance (khusus mobile).
-            Cursor grab/grabbing memberi feedback bahwa area ini bisa di-drag. */}
-        <div
-          className="flex cursor-grab justify-center pt-3 active:cursor-grabbing sm:hidden"
-          aria-hidden
-        >
-          <div className="h-1 w-10 rounded-full bg-(--color-border)" />
+      <div className="space-y-4 px-5 pt-4 pb-[max(1.25rem,calc(env(safe-area-inset-bottom,0px)+1rem))] sm:p-6 sm:pb-7">
+        <div>
+          <h3 className="text-lg font-bold text-(--color-text)">{title}</h3>
+          {subtitle ? (
+            <p className="mt-1 text-sm text-(--color-text-secondary)">
+              {subtitle}
+            </p>
+          ) : null}
         </div>
-
-        <div className="space-y-4 px-5 pt-4 pb-[max(1.25rem,calc(env(safe-area-inset-bottom,0px)+1rem))] sm:p-6 sm:pb-7">
-          <div>
-            <h3 className="text-base font-bold">{title}</h3>
-            {subtitle ? (
-              <p className="mt-0.5 text-xs text-(--color-text-secondary)">
-                {subtitle}
-              </p>
-            ) : null}
-          </div>
-          <div className="space-y-2">
-            {LOCALES.map((code) => {
-              const selected = code === current;
-              return (
-                <button
-                  key={code}
-                  type="button"
-                  onClick={() => {
-                    onSelect(code);
-                    onClose();
-                  }}
-                  aria-pressed={selected}
-                  className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3.5 text-left transition-colors ${
-                    selected
-                      ? "border-(--color-primary) bg-(--color-primary-soft)"
-                      : "border-(--color-border) hover:bg-(--color-surface-alt)"
-                  }`}
-                >
-                  <span aria-hidden className="text-xl">
-                    {LOCALE_FLAGS[code]}
-                  </span>
-                  <span className="flex-1 text-sm font-semibold">
-                    {LOCALE_LABELS[code]}
-                  </span>
-                  {selected && (
-                    <CheckIcon className="h-4 w-4 text-(--color-primary)" />
-                  )}
-                </button>
-              );
-            })}
-          </div>
+        <div className="space-y-2">
+          {LOCALES.map((code) => {
+            const selected = code === current;
+            return (
+              <button
+                key={code}
+                type="button"
+                onClick={() => {
+                  onSelect(code);
+                  onClose();
+                }}
+                aria-pressed={selected}
+                className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3.5 text-left transition-colors ${
+                  selected
+                    ? "border-(--color-primary) bg-(--color-primary-soft)"
+                    : "border-(--color-border) hover:bg-(--color-surface-alt)"
+                }`}
+              >
+                <span aria-hidden className="text-xl">
+                  {LOCALE_FLAGS[code]}
+                </span>
+                <span className="flex-1 text-sm font-semibold">
+                  {LOCALE_LABELS[code]}
+                </span>
+                {selected && (
+                  <CheckIcon className="h-4 w-4 text-(--color-primary)" />
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
-    </div>,
-    document.body,
+    </Modal>
   );
 }
 
@@ -361,25 +243,55 @@ export default function ProfilePage() {
   const [showLogout, setShowLogout] = useState(false);
   const [showLanguage, setShowLanguage] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
+  const [colorMode, setColorMode] = useState<ColorMode>("mono");
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/access");
   }, [user, authLoading, router]);
 
   useEffect(() => {
-    const stored = localStorage.getItem("theme");
+    // Safari private mode / strict privacy settings bisa throw pada
+    // localStorage.getItem — fallback ke prefers-color-scheme.
+    let stored: string | null = null;
+    try {
+      stored = localStorage.getItem("theme");
+    } catch {
+      /* ignore — private mode */
+    }
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     const isDark = stored === "dark" || (!stored && prefersDark);
     setDarkMode(isDark);
     // Defensive: keep <html>.dark in sync in case the bootstrap script and the
     // current DOM state diverged (e.g. user toggled in another tab).
     document.documentElement.classList.toggle("dark", isDark);
+    syncThemeColorMeta(isDark);
+    // Color mode dibaca dari localStorage via helper (SSR-safe + soft-fail).
+    // Bootstrap script di layout.tsx sudah apply class ke <html> sebelum
+    // hydrate — di sini kita cuma sync React state supaya toggle UI reflect
+    // realita.
+    setColorMode(readColorMode());
   }, []);
 
   const handleThemeToggle = (enabled: boolean) => {
     setDarkMode(enabled);
     document.documentElement.classList.toggle("dark", enabled);
-    localStorage.setItem("theme", enabled ? "dark" : "light");
+    // Persist boleh gagal (private mode / quota) — theme tetap ganti di
+    // session ini, tapi tidak persist across reload. Better than crash.
+    try {
+      localStorage.setItem("theme", enabled ? "dark" : "light");
+    } catch {
+      /* ignore — private mode / quota */
+    }
+    syncThemeColorMeta(enabled);
+  };
+
+  const handleColorModeToggle = (enabled: boolean) => {
+    const next: ColorMode = enabled ? "color" : "mono";
+    setColorMode(next);
+    // applyColorMode handles both DOM class toggle & localStorage persist —
+    // dua concern di satu helper supaya ThemeToggle & preferences row tidak
+    // drift kalau future kita tambah entry point ketiga.
+    applyColorMode(next);
   };
 
   if (authLoading || !user) return null;
@@ -410,9 +322,9 @@ export default function ProfilePage() {
         </div>
 
         {/* Account section */}
-        <p className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-wider text-(--color-text-muted)">
+        <SectionLabel className="mb-2 px-1">
           {t("profile.account")}
-        </p>
+        </SectionLabel>
         <div className="rounded-2xl bg-(--color-surface) shadow-sm">
           <div className="flex items-center gap-3.5 px-4 py-3.5">
             <UserIcon className="h-5 w-5 text-(--color-text-muted)" />
@@ -471,9 +383,9 @@ export default function ProfilePage() {
         </div>
 
         {/* Preferences section */}
-        <p className="mt-5 mb-2 px-1 text-[10px] font-semibold uppercase tracking-wider text-(--color-text-muted)">
+        <SectionLabel className="mt-5 mb-2 px-1">
           {t("profile.preferences")}
-        </p>
+        </SectionLabel>
         <div className="rounded-2xl bg-(--color-surface) shadow-sm">
           <div className="flex items-center gap-3.5 px-4 py-3.5">
             <MoonIcon className="h-5 w-5 text-(--color-text-muted)" />
@@ -484,6 +396,28 @@ export default function ProfilePage() {
               </p>
             </div>
             <ToggleSwitch checked={darkMode} onChange={handleThemeToggle} />
+          </div>
+
+          {/* Full-color mode row.
+              Opt-in toggle untuk balik ke warna semantic asli (blue/green/
+              amber/red). Default = mono grayscale (design intent).
+              Ditempatkan setelah darkMode karena keduanya "mengubah tone"
+              — grouping visual yang natural. */}
+          <div className="mx-4 border-t border-(--color-border)/60" />
+          <div className="flex items-center gap-3.5 px-4 py-3.5">
+            <PaletteIcon className="h-5 w-5 text-(--color-text-muted)" />
+            <div className="flex-1">
+              <p className="text-sm font-medium">{t("profile.colorMode")}</p>
+              <p className="text-xs text-(--color-text-muted)">
+                {colorMode === "color"
+                  ? t("profile.colorModeOn")
+                  : t("profile.colorModeOff")}
+              </p>
+            </div>
+            <ToggleSwitch
+              checked={colorMode === "color"}
+              onChange={handleColorModeToggle}
+            />
           </div>
 
           {/* Language selector row */}

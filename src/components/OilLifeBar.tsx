@@ -8,6 +8,14 @@ export type OilLifeBarVariant = "engine" | "gearbox";
  * Zone tokens — untuk label/desc yang butuh terjemahan kita return `key`
  * bukan string mentah, biar caller (React component) yang translate via `t()`
  * di render-time. Ini mengunci perilaku "locale switch langsung refresh".
+ *
+ * Fill pakai `--zone-safe|warn|alarm` CSS token yang mode-aware:
+ *   • Grayscale mode (default): opacity tier dari `--color-text`
+ *     (safe=40%, warn=70%, alarm=100%) → bar tipis→tebal untuk encode
+ *     urgency via visual weight, bukan hue.
+ *   • Full-color mode (opt-in): green/amber/red semantic.
+ *
+ * Token definitions ada di `src/app/globals.css` (`--zone-*`).
  */
 function zoneStyle(p: number): {
   fill: string;
@@ -16,18 +24,18 @@ function zoneStyle(p: number): {
 } {
   if (p >= 60)
     return {
-      fill: "bg-emerald-500",
+      fill: "bg-(--zone-safe)",
       labelKey: "oilLifeBar.statusSafe",
       descKey: "oilLifeBar.descSafe",
     };
   if (p >= 30)
     return {
-      fill: "bg-amber-500",
+      fill: "bg-(--zone-warn)",
       labelKey: "oilLifeBar.statusWarn",
       descKey: "oilLifeBar.descWarn",
     };
   return {
-    fill: "bg-red-500",
+    fill: "bg-(--zone-alarm)",
     labelKey: "oilLifeBar.statusUrgent",
     descKey: "oilLifeBar.descUrgent",
   };
@@ -35,13 +43,13 @@ function zoneStyle(p: number): {
 
 function VariantIcon({ variant }: { variant: OilLifeBarVariant }) {
   const isEngine = variant === "engine";
+  // Variant tint di-neutralize (sebelumnya sky/violet). Login tone monochrome —
+  // differentiation cukup dari icon (🛢️ vs ⚙️) + label sublabel. Kalau
+  // butuh visual distinction lebih strong, pakai icon size/border weight,
+  // bukan hue.
   return (
     <div
-      className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-2xl shadow-inner ${
-        isEngine
-          ? "bg-sky-500/15 ring-1 ring-sky-500/25 dark:bg-sky-400/10 dark:ring-sky-400/20"
-          : "bg-violet-500/15 ring-1 ring-violet-500/25 dark:bg-violet-400/10 dark:ring-violet-400/20"
-      }`}
+      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-(--color-surface-alt) text-2xl shadow-inner ring-1 ring-(--color-border)/60"
       aria-hidden
     >
       {isEngine ? "🛢️" : "⚙️"}
@@ -70,16 +78,10 @@ export default function OilLifeBar({
   const p = percent == null ? null : Math.max(0, Math.min(100, percent));
   const zone = p == null ? null : zoneStyle(p);
   const compact = density === "compact";
-  const ring = compact
-    ? "ring-(--color-border)/30"
-    : variant === "engine"
-      ? "ring-sky-500/20 dark:ring-sky-400/15"
-      : "ring-violet-500/20 dark:ring-violet-400/15";
-  const tint = compact
-    ? "from-(--color-surface) to-(--color-surface)"
-    : variant === "engine"
-      ? "from-sky-500/[0.07] via-(--color-surface) to-(--color-surface)"
-      : "from-violet-500/[0.08] via-(--color-surface) to-(--color-surface)";
+  // Ring + tint di-neutralize (sebelumnya sky vs violet per variant). Login
+  // tone flat neutral — cukup satu treatment untuk semua variant.
+  const ring = "ring-(--color-border)/30";
+  const tint = "from-(--color-surface) to-(--color-surface)";
 
   return (
     <div
@@ -126,8 +128,11 @@ export default function OilLifeBar({
                 {p}%
               </p>
               {zone && (
+                // Grayscale zone label: warna sama untuk semua tier, urgency
+                // encoded via font-weight (safe/warn=bold, urgent=black + wider
+                // tracking untuk emphasis).
                 <p
-                  className={`mt-1 text-[11px] font-bold ${p >= 60 ? "text-emerald-600 dark:text-emerald-400" : p >= 30 ? "text-amber-700 dark:text-amber-400" : "text-red-600 dark:text-red-400"}`}
+                  className={`mt-1 text-[11px] ${p < 30 ? "font-black tracking-wider text-(--color-text)" : "font-bold text-(--color-text-secondary)"}`}
                 >
                   {t(zone.labelKey)}
                 </p>
@@ -165,17 +170,20 @@ export default function OilLifeBar({
       )}
 
       {!compact && (
+        // Legend chips — dot warna pakai zone token yang sama dengan bar
+        // fill supaya legend visually match dengan actual bar state di
+        // both modes (grayscale & color).
         <div className="mt-4 flex flex-wrap gap-2">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/12 px-2.5 py-1 text-[10px] font-semibold text-emerald-800 dark:text-emerald-300/90">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-(--color-surface-alt) px-2.5 py-1 text-[10px] font-semibold text-(--color-text-secondary)">
+            <span className="h-1.5 w-1.5 rounded-full bg-(--zone-safe)" />
             {t("oilLifeBar.legendSafe")}
           </span>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-2.5 py-1 text-[10px] font-semibold text-amber-900 dark:text-amber-200/85">
-            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-(--color-surface-alt) px-2.5 py-1 text-[10px] font-semibold text-(--color-text-secondary)">
+            <span className="h-1.5 w-1.5 rounded-full bg-(--zone-warn)" />
             {t("oilLifeBar.legendWarn")}
           </span>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-red-500/12 px-2.5 py-1 text-[10px] font-semibold text-red-800 dark:text-red-300/90">
-            <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-(--color-surface-alt) px-2.5 py-1 text-[10px] font-semibold text-(--color-text)">
+            <span className="h-1.5 w-1.5 rounded-full bg-(--zone-alarm)" />
             {t("oilLifeBar.legendUrgent")}
           </span>
         </div>

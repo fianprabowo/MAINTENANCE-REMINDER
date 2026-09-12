@@ -16,6 +16,7 @@ import StatusBadge from "@/components/StatusBadge";
 import EmptyVehicleState from "@/components/EmptyVehicleState";
 import NotificationBell from "@/components/NotificationBell";
 import { CardSkeleton, DetailSkeleton } from "@/components/LoadingSkeleton";
+import { SectionLabel, Spinner } from "@/components/ui";
 import { useTranslation, type TranslationKey } from "@/lib/i18n";
 
 /**
@@ -316,7 +317,7 @@ export default function DashboardPage() {
     }
     return (
       <div className="flex items-center justify-center px-4 py-16 sm:px-5">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--color-border) border-t-(--color-primary)" />
+        <Spinner className="h-8 w-8 text-(--color-primary)" />
       </div>
     );
   }
@@ -388,9 +389,7 @@ export default function DashboardPage() {
             </p>
             <div className="mt-3 flex flex-wrap items-end justify-between gap-2 border-t border-(--color-border)/50 pt-3">
               <div>
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-(--color-text-muted)">
-                  {t("dashboard.lastKm")}
-                </p>
+                <SectionLabel>{t("dashboard.lastKm")}</SectionLabel>
                 <p className="mt-0.5 text-base font-bold tabular-nums text-(--color-text)">
                   {latest_mileage ? `${formatNumber(latest_mileage.mileage)} km` : "—"}
                 </p>
@@ -443,7 +442,7 @@ export default function DashboardPage() {
             🛠️
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)">{t("dashboard.service")}</p>
+            <SectionLabel>{t("dashboard.service")}</SectionLabel>
             <p className="mt-0.5 text-sm font-bold text-(--color-text)">{t("dashboard.serviceHistory")}</p>
             <p className="mt-0.5 text-xs text-(--color-text-secondary)">{t("dashboard.serviceHistorySub")}</p>
           </div>
@@ -461,14 +460,20 @@ export default function DashboardPage() {
           const hasOverdue = overdueCount > 0;
           const isEmpty = total === 0;
 
+          // Dashboard card tone tokens — mode-aware via `--zone-alarm` untuk
+          // overdue state (red di color mode, dark inverted di grayscale):
+          //  - hasOverdue : zone-alarm bg badge/icon (loud, mode-aware)
+          //  - isEmpty    : muted / secondary (quiet, "no data")
+          //  - default OK : soft surface-alt (calm)
+          // Ring tetap monochrome (subtle depth, tidak encode urgency utama).
           const tone = hasOverdue
             ? {
-                ring: "ring-1 ring-(--color-critical)/30",
-                bg: "bg-red-50 dark:bg-red-900/15",
-                accent: "text-(--color-critical)",
+                ring: "ring-2 ring-(--color-text)/30",
+                bg: "bg-(--color-surface-alt)",
+                accent: "text-(--color-text) font-bold",
                 badge:
-                  "bg-(--color-critical)/12 text-(--color-critical) dark:bg-(--color-critical)/20",
-                iconBg: "bg-(--color-critical)/15 text-(--color-critical)",
+                  "bg-(--zone-alarm) text-(--color-bg) font-bold",
+                iconBg: "bg-(--zone-alarm) text-(--color-bg)",
               }
             : isEmpty
               ? {
@@ -480,12 +485,12 @@ export default function DashboardPage() {
                   iconBg: "bg-(--color-surface-alt) text-(--color-text-muted)",
                 }
               : {
-                  ring: "ring-1 ring-(--color-good)/25",
-                  bg: "bg-emerald-50/60 dark:bg-emerald-900/12",
-                  accent: "text-(--color-good)",
+                  ring: "ring-1 ring-(--color-border)/60",
+                  bg: "bg-(--color-surface)",
+                  accent: "text-(--color-text-secondary)",
                   badge:
-                    "bg-(--color-good)/12 text-(--color-good) dark:bg-(--color-good)/20",
-                  iconBg: "bg-(--color-good)/15 text-(--color-good)",
+                    "bg-(--color-surface-alt) text-(--color-text-secondary)",
+                  iconBg: "bg-(--color-surface-alt) text-(--color-text)",
                 };
 
           return (
@@ -550,14 +555,14 @@ export default function DashboardPage() {
         })()} */}
 
         <section id="mileage-chart" className="scroll-mt-28 space-y-3">
-          <h2 className="text-xs font-bold uppercase tracking-wider text-(--color-text-muted)">{t("dashboard.mileageHistoryTitle")}</h2>
+          <SectionLabel as="h2">{t("dashboard.mileageHistoryTitle")}</SectionLabel>
           {historyLoading ? (
             <div className="space-y-3">
               <CardSkeleton />
             </div>
           ) : (
             <div className="rounded-2xl border border-(--color-border)/70 bg-(--color-surface) p-4">
-              <h3 className="mb-2 text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)">{t("dashboard.mileageTrend")}</h3>
+              <SectionLabel as="h3" className="mb-2">{t("dashboard.mileageTrend")}</SectionLabel>
               <MileageChart logs={historyLogs} />
             </div>
           )}

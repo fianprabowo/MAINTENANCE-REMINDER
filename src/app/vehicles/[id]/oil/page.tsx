@@ -13,6 +13,7 @@ import {
   oilRemainingKm,
 } from "@/lib/oil-utils";
 import { DetailSkeleton } from "@/components/LoadingSkeleton";
+import { Button, IconButton, SectionLabel } from "@/components/ui";
 import { useTranslation } from "@/lib/i18n";
 
 // ---------------------------------------------------------------------------
@@ -34,24 +35,29 @@ interface ZoneStyle {
   ring: string;
 }
 
+// Zone styles — mode-aware via `--zone-*` CSS tokens (lihat globals.css):
+//   • Grayscale mode: opacity tier dari --color-text (safe=40%/warn=70%/bad=100%)
+//   • Color mode: green/amber/red semantic
+// `bgSoft` dan `ring` sengaja tetap pakai `--color-text/N` (subtle depth
+// accent yang mode-independent) supaya card tidak terlalu tinted.
 const ZONE_STYLES: Record<Zone, ZoneStyle> = {
   good: {
-    text: "text-emerald-600 dark:text-emerald-400",
-    bar: "bg-emerald-500",
-    bgSoft: "bg-emerald-500/10",
-    ring: "ring-emerald-500/25",
+    text: "text-(--color-text-secondary)",
+    bar: "bg-(--zone-safe)",
+    bgSoft: "bg-(--color-text)/5",
+    ring: "ring-(--color-text)/15",
   },
   warn: {
-    text: "text-amber-600 dark:text-amber-400",
-    bar: "bg-amber-500",
-    bgSoft: "bg-amber-500/10",
-    ring: "ring-amber-500/30",
+    text: "text-(--color-text)",
+    bar: "bg-(--zone-warn)",
+    bgSoft: "bg-(--color-text)/8",
+    ring: "ring-(--color-text)/25",
   },
   bad: {
-    text: "text-red-600 dark:text-red-400",
-    bar: "bg-red-500",
-    bgSoft: "bg-red-500/10",
-    ring: "ring-red-500/30",
+    text: "text-(--color-text) font-bold",
+    bar: "bg-(--zone-alarm)",
+    bgSoft: "bg-(--color-text)/12",
+    ring: "ring-(--color-text)/40",
   },
 };
 
@@ -202,13 +208,15 @@ export default function VehicleOilPage() {
   return (
     <div className="flex min-h-screen flex-col bg-(--color-bg)">
       <main className="flex-1 px-5 pb-10 pt-5">
-        <button
-          type="button"
+        <IconButton
+          label={t("oilPage.back")}
+          variant="ghost"
+          size="lg"
           onClick={() => router.push(`/vehicles/${vehicleId}`)}
-          className="mb-4 inline-flex items-center gap-1 text-sm font-semibold text-(--color-text-secondary) transition-colors duration-200 hover:text-(--color-text)"
+          className="mb-4 -ml-2"
         >
-          {t("oilPage.back")}
-        </button>
+          <BackIcon className="h-5 w-5" />
+        </IconButton>
 
         {loading || !detail ? (
           <DetailSkeleton />
@@ -217,9 +225,9 @@ export default function VehicleOilPage() {
             {/* Header — vehicle context, title only. Long-form description
                 removed per spec ("Kurangi Teks"). */}
             <header className="mb-4">
-              <p className="text-xs font-bold uppercase tracking-wider text-(--color-primary)">
+              <SectionLabel className="text-(--color-primary)">
                 {detail.vehicle.name}
-              </p>
+              </SectionLabel>
               <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-(--color-text)">
                 {t("oilPage.title")}
               </h1>
@@ -236,7 +244,9 @@ export default function VehicleOilPage() {
                 safety-relevant piece of info that older 2-tak engines
                 require but isn't covered by the interval bars. */}
             {category?.slug === "two_stroke" && category.side_oil_note && (
-              <div className="mb-5 rounded-2xl bg-amber-500/10 px-4 py-3 text-xs leading-relaxed text-amber-900 ring-1 ring-amber-500/30 dark:text-amber-200/90">
+              // Warning note (grayscale) — soft neutral bg + darker ring untuk
+              // encode "attention" via visual weight, bukan hue.
+              <div className="mb-5 rounded-2xl bg-(--color-surface-alt) px-4 py-3 text-xs leading-relaxed text-(--color-text) ring-1 ring-(--color-text)/20">
                 <span className="font-bold">{t("oilPage.sideOil")}</span> {category.side_oil_note}
               </div>
             )}
@@ -300,17 +310,20 @@ export default function VehicleOilPage() {
             </Link>
 
             {/* Tertiary CTA — bengkel (text-only, lowest visual weight). */}
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
+              fullWidth
               onClick={() =>
                 router.push(
                   `/workshops?brand=${encodeURIComponent(detail.vehicle.brand)}&slug=${encodeURIComponent(category?.slug ?? "")}`,
                 )
               }
-              className="mt-3 w-full rounded-2xl px-5 py-3 text-xs font-semibold text-(--color-text-secondary) transition-colors duration-200 hover:text-(--color-text)"
+              className="mt-3"
             >
               {t("oilPage.findWorkshop")}
-            </button>
+            </Button>
           </>
         )}
       </main>
@@ -368,11 +381,13 @@ function CategoryWarning({
   t: ReturnType<typeof useTranslation>["t"];
 }) {
   return (
-    <div className="mb-5 rounded-2xl bg-amber-500/10 p-4 ring-1 ring-amber-500/30">
-      <p className="text-sm font-bold text-amber-950 dark:text-amber-100/95">
+    // Grayscale warning callout — sebelumnya amber/10. Sekarang neutral bg
+    // dengan ring lebih tegas untuk "attention".
+    <div className="mb-5 rounded-2xl bg-(--color-surface-alt) p-4 ring-1 ring-(--color-text)/25">
+      <p className="text-sm font-bold text-(--color-text)">
         {t("oilPage.categoryNotSetTitle")}
       </p>
-      <p className="mt-1 text-xs leading-relaxed text-amber-950/85 dark:text-amber-100/80">
+      <p className="mt-1 text-xs leading-relaxed text-(--color-text-secondary)">
         {t("oilPage.categoryNotSetSub")}
       </p>
       <Link
@@ -440,9 +455,7 @@ function HeroStatus({
       className={`mb-1 rounded-3xl p-6 text-center shadow-sm ring-1 transition-all duration-200 ${z.bgSoft} ${z.ring}`}
       aria-label={t("oilPage.statusAria", { label, zone: zoneLabel(zone) })}
     >
-      <p className="text-[11px] font-bold uppercase tracking-wider text-(--color-text-muted)">
-        {label}
-      </p>
+      <SectionLabel>{label}</SectionLabel>
       <p className={`mt-1 text-6xl font-black leading-none tracking-tight tabular-nums ${z.text}`}>
         {pct}
         <span className="text-3xl">%</span>
@@ -475,16 +488,21 @@ function HeroEmpty({
   ctaHref: string;
   ctaLabel: string;
 }) {
+  const router = useRouter();
+
   return (
     <section className="mb-1 rounded-3xl bg-(--color-surface) p-6 text-center shadow-sm ring-1 ring-(--color-border)/50">
       <p className="text-sm font-semibold text-(--color-text)">{primary}</p>
       <p className="mt-1 text-xs leading-relaxed text-(--color-text-muted)">{secondary}</p>
-      <Link
-        href={ctaHref}
-        className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-(--color-primary-soft) px-4 py-2 text-xs font-bold text-(--color-primary) transition-all duration-200 hover:shadow-md active:scale-95"
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        onClick={() => router.push(ctaHref)}
+        className="mt-4"
       >
         {ctaLabel}
-      </Link>
+      </Button>
     </section>
   );
 }
@@ -514,6 +532,8 @@ function OilCard({
       ? t("oilPage.interval", { km: formatNumber(stream.intervalMid) })
       : null;
 
+  const router = useRouter();
+
   // No history yet — render a slim empty state inside the card so the user
   // can record the first service without leaving the page hierarchy.
   if (stream.pct == null) {
@@ -532,12 +552,15 @@ function OilCard({
           <span className="text-xs text-(--color-text-secondary)">
             {t("oilPage.noOilHistory")}
           </span>
-          <Link
-            href={`/vehicles/${vehicleId}/service-history`}
-            className="shrink-0 rounded-full bg-(--color-primary-soft) px-3 py-1 text-[11px] font-bold text-(--color-primary) transition-all duration-200 hover:shadow-md active:scale-95"
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => router.push(`/vehicles/${vehicleId}/service-history`)}
+            className="h-8 shrink-0 px-3 text-[11px]"
           >
             {t("oilPage.recordCta")}
-          </Link>
+          </Button>
         </div>
       </div>
     );
@@ -588,5 +611,24 @@ function OilCard({
         </p>
       )}
     </div>
+  );
+}
+
+function BackIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+    >
+      <line x1="19" y1="12" x2="5" y2="12" />
+      <polyline points="12 19 5 12 12 5" />
+    </svg>
   );
 }

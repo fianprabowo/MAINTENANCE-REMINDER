@@ -20,6 +20,7 @@ import {
   type PartLifeStatus,
 } from "@/lib/part-condition-utils";
 import { useTranslation } from "@/lib/i18n";
+import { Button } from "@/components/ui";
 import {
   engineIntervalMid,
   gearboxIntervalMid,
@@ -42,8 +43,6 @@ import {
  * perhatian muncul di atas — sesuai spec "Sekali lihat langsung tahu part mana
  * yang bermasalah".
  */
-
-const btnPress = "transition-all duration-150 active:scale-95";
 
 type ConditionEntry = {
   /** Identifier unik untuk key React. */
@@ -192,13 +191,14 @@ export default function PartConditionPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <main className="flex-1 px-4 pb-8 pt-5 sm:px-6">
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={() => router.push(`/vehicles/${id}`)}
-          className={`mb-4 rounded-lg px-1 py-0.5 text-sm font-semibold text-(--color-text-secondary) hover:bg-(--color-surface) hover:text-(--color-text) ${btnPress}`}
+          className="mb-4 self-start text-(--color-text-secondary) hover:text-(--color-text)"
         >
           {t("conditionPage.backToDetail")}
-        </button>
+        </Button>
 
         {loading || !detail ? (
           <DetailSkeleton />
@@ -242,16 +242,22 @@ export default function PartConditionPage() {
 
 function EmptyState({ t }: { t: ReturnType<typeof useTranslation>["t"] }) {
   return (
-    <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-(--color-border) bg-(--color-surface)/80 px-6 py-12 text-center">
+    // Konsisten dengan pola inline empty state di notifications page +
+    // service-history: dashed border/60 + surface/50 + rounded-2xl.
+    // Sebelumnya pakai `bg-(--color-surface)/80` + `rounded-xl` + text-base
+    // (visual weight beda dari sibling empty state). Icon container pakai
+    // `--color-surface-alt` (bukan `--color-primary-soft` yang aliased ke
+    // token yang sama — hindari indirection).
+    <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-(--color-border)/60 bg-(--color-surface)/50 px-6 py-12 text-center">
       <div
-        className="flex h-14 w-14 items-center justify-center rounded-2xl bg-(--color-primary-soft) text-2xl text-(--color-primary)"
+        className="flex h-14 w-14 items-center justify-center rounded-2xl bg-(--color-surface-alt) text-2xl"
         aria-hidden
       >
         📋
       </div>
       <div>
-        <p className="text-base font-bold text-(--color-text)">{t("conditionPage.emptyTitle")}</p>
-        <p className="mt-1 text-sm text-(--color-text-secondary)">
+        <p className="text-sm font-semibold text-(--color-text)">{t("conditionPage.emptyTitle")}</p>
+        <p className="mt-1 text-xs text-(--color-text-secondary)">
           {t("conditionPage.emptySub")}
         </p>
       </div>
@@ -259,28 +265,31 @@ function EmptyState({ t }: { t: ReturnType<typeof useTranslation>["t"] }) {
   );
 }
 
+// Status style — mode-aware via `--zone-*` tokens (bar + urgent.pill).
+// cardRing sengaja tetap monochrome (subtle depth accent, tidak encode
+// urgency utama). Konsisten dengan OilLifeBar / oil page / fuel page.
 function statusStyle(status: PartLifeStatus | null) {
   switch (status) {
     case "safe":
       return {
-        bar: "bg-emerald-500",
-        pill: "bg-emerald-500/12 text-emerald-700 dark:text-emerald-400",
-        text: "text-emerald-700 dark:text-emerald-400",
+        bar: "bg-(--zone-safe)",
+        pill: "bg-(--color-surface-alt) text-(--color-text-secondary)",
+        text: "text-(--color-text-secondary)",
         cardRing: "ring-(--color-border)/40",
       };
     case "warn":
       return {
-        bar: "bg-amber-500",
-        pill: "bg-amber-500/15 text-amber-800 dark:text-amber-300",
-        text: "text-amber-800 dark:text-amber-300",
-        cardRing: "ring-amber-500/30",
+        bar: "bg-(--zone-warn)",
+        pill: "bg-(--color-surface-alt) text-(--color-text) font-semibold",
+        text: "text-(--color-text)",
+        cardRing: "ring-(--color-text)/25",
       };
     case "urgent":
       return {
-        bar: "bg-red-500",
-        pill: "bg-red-500/15 text-red-700 dark:text-red-400",
-        text: "text-red-700 dark:text-red-400",
-        cardRing: "ring-red-500/35",
+        bar: "bg-(--zone-alarm)",
+        pill: "bg-(--zone-alarm) text-(--color-bg) font-bold",
+        text: "text-(--color-text) font-bold",
+        cardRing: "ring-(--color-text)/40",
       };
     default:
       return {

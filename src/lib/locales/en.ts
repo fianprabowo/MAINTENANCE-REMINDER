@@ -16,12 +16,14 @@
  */
 const en = {
   common: {
-    appName: "Maintenance Reminder",
+    // Brand name = proper noun, tetap sama di semua locale (mirror di id.ts).
+    appName: "RISMA",
     loading: "Loading...",
     cancel: "Cancel",
     confirm: "Confirm",
     save: "Save",
     close: "Close",
+    closeDialog: "Close dialog",
     back: "Back",
     next: "Next",
     continue: "Continue",
@@ -70,16 +72,21 @@ const en = {
     errorEmpty: "Please enter your access code.",
     errorInvalid: "Invalid access code. Please check and try again.",
     errorInvalidResponse: "Invalid response from server.",
+    errorSessionFailed: "Failed to establish session. Please try again.",
     noCode: "Don't have an access code?",
     contactSupport: "Contact support",
   },
 
   login: {
+    /*
+     * Legacy keys — dipakai kalau `/login` di-restore ke email/password auth.
+     * Tetap dipertahankan untuk backward compat + fallback bahasa.
+     */
     title: "Welcome Back",
     subtitle: "Sign in to your maintenance tracker",
     identifierPlaceholder: "Email or phone number *",
     passwordPlaceholder: "Password *",
-    submit: "Sign In",
+    submit: "Log in",
     submitting: "Signing in...",
     welcomeBack: "Welcome back!",
     failed: "Login failed",
@@ -87,6 +94,21 @@ const en = {
     errorPassword: "Password is required",
     noAccount: "Don't have an account?",
     signUp: "Sign up",
+
+    /*
+     * Access-code redesign copy (mockup Apple Music-inspired). Kalau nanti
+     * pindah ke email/password auth, tinggal swap kunci-kunci ini.
+     * `brandFullName` sengaja English di semua locale — dia kepanjangan
+     * acronym RISMA, kalau di-translate hilang makna acronym-nya
+     * (mirip "IBM" = "International Business Machines" di setiap bahasa).
+     */
+    brandTitle: "RISMA",
+    brandFullName: "Ride Inspection Smart Management App",
+    codePlaceholder: "Access code",
+    showCode: "Show code",
+    hideCode: "Hide code",
+    noCode: "Don't have a code?",
+    contactSupport: "Contact support",
   },
 
   register: {
@@ -193,6 +215,12 @@ const en = {
     darkMode: "Dark Mode",
     darkModeOn: "On",
     darkModeOff: "Off",
+    // Full-color mode toggle — opt-in. Default = grayscale (design intent
+    // dari sweep audit). Copy sengaja explicit "colored badges" supaya
+    // user tahu perbedaan konkret vs abstract "colorful theme".
+    colorMode: "Full Color",
+    colorModeOn: "Colored badges & buttons",
+    colorModeOff: "Grayscale mode",
     language: "Language",
     languageSublabel: "Select Language",
     languageEnglish: "English",
@@ -214,6 +242,11 @@ const en = {
     markReadFailed: "Failed to mark as read",
     loadFailed: "Failed to load notifications",
     deleteFailed: "Failed to delete",
+    deleteTitle: "Delete notification?",
+    deleteMessage: "This notification will be permanently removed from your list.",
+    deleteConfirm: "Delete",
+    deleteCancel: "Cancel",
+    deletingLoading: "Deleting...",
     listHint: "Tap to open, swipe left to delete.",
     ariaOpen: "Open notification {title}",
     ariaUnread: "Unread",
@@ -230,6 +263,59 @@ const en = {
     yesterday: "Yesterday",
     daysAgo: "{n} d ago",
     weeksAgo: "{n} w ago",
+    /*
+     * `copy.*` — templated content for notification title + body variants.
+     *
+     * `pickCopy()` in `src/lib/notification-copy.ts` picks a variant per
+     * `(reminder, day, kind)` seed so text is stable. Placeholders:
+     *   • {preset}  — preset noun ("oil change", "regular service") lower or capitalized
+     *   • {km}      — remaining/overdue km (formatted via locale)
+     *   • {days}    — remaining/overdue days
+     *   • {vehicle} — vehicle name (empty means "Personal" variants are skipped)
+     *   • {subject} — vehicle name OR generic bike noun
+     *
+     * All strings capped at reasonable lengths (title ≤ 40 chars, body ≤ 80)
+     * — enforce di `pickCopy` via `clamp()` helper.
+     */
+    copy: {
+      titles: {
+        mendekati1: "Service coming up",
+        mendekati2: "Almost time for service",
+        mendekati3: "Get ready for service",
+        terlewat1: "Time for service",
+        terlewat2: "Service overdue",
+        terlewat3: "Your bike needs attention",
+      },
+      bodies: {
+        mendekatiKm1: "{preset} in about {km} km",
+        mendekatiKm2: "{km} km left before {preset}",
+        mendekatiDays: "{preset} due in {days} days",
+        mendekatiPersonal: "{vehicle} is almost due for {preset}",
+        mendekatiGeneric: "Get ready for {preset} on {subject}",
+        terlewatKm: "{preset} is {km} km overdue",
+        terlewatDays: "{preset} is {days} days overdue",
+        terlewatPersonal: "{vehicle} is due for {preset}",
+        terlewatGeneric: "{preset} overdue — best to schedule it soon",
+        fallback: "Check on {subject} now",
+      },
+      presetNouns: {
+        oilChange: "oil change",
+        regularService: "regular service",
+        cvt: "CVT service",
+        brake: "brake pad replacement",
+        battery: "battery replacement",
+        fallback: "service",
+      },
+      subject: {
+        // Starts a sentence — capitalize.
+        fallback: "Your bike",
+        // Used mid-sentence — lowercase.
+        fallbackLower: "your bike",
+        // When vehicleName is empty AND subject is used inside mendekatiGeneric,
+        // we replace "your bike" with just "bike" to avoid pronoun repetition.
+        generic: "bike",
+      },
+    },
   },
 
   vehicles: {
@@ -286,7 +372,10 @@ const en = {
     timelineTitle: "Mileage timeline",
     lastUpdateAt: "Last update · {when}",
     endOfHistory: "End of history",
-    loadingMore: "Loading more…",
+    // Timeline pagination counter — placed BELOW the visible rows.
+    // `{shown}` = current visible count, `{total}` = total logs loaded.
+    // Note: numbers are auto-formatted via Intl.NumberFormat in interpolate().
+    historyPaginationCounter: "Showing {shown} of {total} · scroll to load more",
     notesTitle: "Notes",
     serviceReminderTitle: "Service reminders",
     serviceLight: "Light service",
@@ -296,7 +385,7 @@ const en = {
     dueOn: "Due {date}",
     updateMileageTitle: "Update mileage",
     deleteMileageTitle: "Delete mileage record?",
-    deleteMileageMessage: "The record of {km} KM will be permanently deleted. If it was the latest entry, the vehicle's mileage will roll back to the previous record.",
+    deleteMileageMessage: "Deleting {km} KM will roll back the vehicle's mileage to the previous record if it's the latest entry.",
     deleteMileageConfirm: "Delete",
     deleteMileageCancel: "Cancel",
     deletingMileage: "Deleting…",
@@ -822,6 +911,18 @@ const en = {
 
   mileageChart: {
     noData: "Need at least 2 data points to show chart.",
+    // Time range preset buttons. Kept short (2-3 chars) for compact toolbar.
+    // "M" = month, "Y" = year — standard finance shorthand.
+    range1M: "1M",
+    range3M: "3M",
+    range6M: "6M",
+    range1Y: "1Y",
+    rangeAll: "All",
+    // Shown next to range buttons when chart is zoomed via gesture/wheel.
+    reset: "Reset",
+    // Subtle affordance below chart — hints at native gesture support.
+    // Double-tap axis label = reset (built-in behavior of lightweight-charts).
+    zoomHint: "Pinch or scroll to zoom · drag to pan · double-tap to reset",
   },
 
   fuelGauge: {

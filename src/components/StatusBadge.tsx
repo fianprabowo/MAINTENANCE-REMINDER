@@ -6,28 +6,36 @@ interface StatusBadgeProps {
   status: "good" | "warning" | "critical";
 }
 
-// Label di-mapping ke i18n key. Styling (warna) tidak ikut locale — cukup
-// aman di-static.
+// Label di-mapping ke i18n key. Styling tidak ikut locale — cukup aman
+// di-static.
+//
+// Warna via `--zone-*` mode-aware tokens (lihat globals.css):
+//   • Grayscale mode: opacity tier (safe=40%/warn=70%/alarm=100%) untuk
+//     encode urgency via visual weight, bukan hue. Font-weight juga
+//     bertingkat: good=regular, warning=medium, critical=bold.
+//   • Color mode: green/amber/red semantic.
+// Critical pakai INVERTED chip bg (zone-alarm sebagai bg + color-bg text)
+// supaya menonjol seperti "loud" alarm — analog dengan red badge original.
 const statusConfig: Record<
   StatusBadgeProps["status"],
   { bg: string; text: string; dot: string; labelKey: TranslationKey }
 > = {
   good: {
-    bg: "bg-emerald-50 dark:bg-emerald-900/20",
-    text: "text-emerald-600 dark:text-emerald-400",
-    dot: "bg-emerald-500",
+    bg: "bg-(--color-surface-alt)",
+    text: "text-(--color-text-secondary)",
+    dot: "bg-(--zone-safe)",
     labelKey: "status.ok",
   },
   warning: {
-    bg: "bg-amber-50 dark:bg-amber-900/20",
-    text: "text-amber-600 dark:text-amber-400",
-    dot: "bg-amber-500",
+    bg: "bg-(--color-surface-alt)",
+    text: "text-(--color-text)",
+    dot: "bg-(--zone-warn)",
     labelKey: "status.warning",
   },
   critical: {
-    bg: "bg-red-50 dark:bg-red-900/20",
-    text: "text-red-600 dark:text-red-400",
-    dot: "bg-red-500",
+    bg: "bg-(--zone-alarm)",
+    text: "text-(--color-bg) font-bold",
+    dot: "bg-(--color-bg)",
     labelKey: "status.critical",
   },
 };

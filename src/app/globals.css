@@ -3,33 +3,164 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
+  /*
+   * `color-scheme` memberi tahu browser tone kita untuk native form
+   * controls (date/time picker, scrollbar, spinner input number, dll).
+   * Tanpa ini, date picker di dark mode akan render dengan default
+   * light theme browser → mismatch visual. Sync-kan dengan `.dark`
+   * class di bawah.
+   */
+  color-scheme: light;
   --color-bg: #ffffff;
   --color-surface: #f5f7fa;
   --color-surface-alt: #eef1f6;
   --color-text: #1a1d26;
   --color-text-secondary: #6b7280;
-  --color-text-muted: #9ca3af;
+  /*
+   * WCAG 2.1 SC 1.4.3 (Contrast Minimum) compliance:
+   *   - Diperkuat dari `#9ca3af` (2.24-2.54:1 → fail semua size) ke
+   *     `#7e838d` (3.36-3.81:1 → pass AA-Large 3:1) di semua kombinasi
+   *     bg / surface / surface-alt.
+   *   - Trade-off: hierarchy vs. `--color-text-secondary` mengecil dari
+   *     ~1.9:1 jadi 1.27:1 — masih perceivable, tapi kurang dramatis.
+   *   - Untuk text < 14pt reguler, WCAG AA full (4.5:1) belum
+   *     tercapai; `--color-text-muted` sengaja tetap muted supaya
+   *     hierarchy visual mudah dibaca. Untuk konten *kritikal* (bukan
+   *     hint/label), pakai `--color-text-secondary` yang pass AA full.
+   */
+  --color-text-muted: #7e838d;
   --color-border: #e5e7eb;
-  --color-primary: #3b82f6;
-  --color-primary-soft: #dbeafe;
-  --color-good: #22c55e;
-  --color-warning: #f59e0b;
-  --color-critical: #ef4444;
+  /*
+   * `--color-primary` di-alias ke `--color-text` (dark neutral) supaya semua
+   * `bg-(--color-primary)`, `text-(--color-primary)`, `border-(--color-primary)`,
+   * `ring-(--color-primary)`, dll otomatis pakai tone yang sama dengan login
+   * page CTA (`bg-(--color-text)`). Sebelumnya biru (#3b82f6); sekarang
+   * grayscale monochrome — 100% aligned dengan tone login page.
+   *
+   * Semantic colors (--color-good/warning/critical) tetap pakai warna asli
+   * karena punya makna spesifik (success/warning/error) — bukan chrome.
+   */
+  --color-primary: #1a1d26;
+  --color-primary-soft: #eef1f6;
+  /*
+   * Semantic status colors di-grayscale-kan (full grayscale mode).
+   * Distinction dari urgency di-encode via HIERARCHY, bukan HUE:
+   *   - `--color-good`     = text-muted    → paling quiet, "no action"
+   *   - `--color-warning`  = text-secondary → mid emphasis
+   *   - `--color-critical` = text           → paling loud, high emphasis
+   * Component code disarankan tambah `font-bold` / border weight untuk
+   * critical states supaya urgency masih bisa dibaca sekilas.
+   */
+  --color-good: #9ca3af;
+  --color-warning: #6b7280;
+  --color-critical: #1a1d26;
+  /*
+   * Zone tokens untuk fuel/oil bars & gauges. Terpisah dari
+   * `--color-good/warning/critical` karena bar/gauge butuh HIERARCHY
+   * VISUAL WEIGHT yang berbeda dari badge/status pill.
+   *
+   *   • Grayscale mode (default): opacity tier dari `--color-text` supaya
+   *     safe=quiet tipis, alarm=tebal loud (mimic visual density seperti
+   *     "battery low" indicator).
+   *   • `color-mix(... transparent)` alih-alih Tailwind `/40` opacity
+   *     supaya value-nya bisa jadi CSS variable — component tetap pakai
+   *     `bg-(--zone-safe)` tanpa peduli mode.
+   *
+   * Semantic map:
+   *   safe  → "healthy, no action needed"     → grayscale=40% opacity  / color=green
+   *   warn  → "monitoring, watch it"          → grayscale=70% opacity  / color=amber
+   *   alarm → "action required, high urgency" → grayscale=100% opacity / color=red
+   */
+  --zone-safe: color-mix(in oklab, var(--color-text) 40%, transparent);
+  --zone-warn: color-mix(in oklab, var(--color-text) 70%, transparent);
+  --zone-alarm: var(--color-text);
 }
 
 .dark {
+  /* Sync native form controls (date picker, scrollbar) ke dark theme. */
+  color-scheme: dark;
   --color-bg: #111318;
   --color-surface: #1a1d27;
   --color-surface-alt: #22252f;
   --color-text: #f0f1f4;
   --color-text-secondary: #9ca3af;
-  --color-text-muted: #5c6370;
+  /*
+   * WCAG SC 1.4.3: diperkuat dari `#5c6370` (2.53-3.07:1 → mostly fail)
+   * ke `#767c8a` (3.65-4.44:1 → pass AA-Large di semua surface, hampir
+   * AA full di beberapa). Hierarchy vs secondary: 1.65:1 (masih jelas).
+   */
+  --color-text-muted: #767c8a;
   --color-border: #2d3039;
+  /* Same aliasing as :root — primary = text, primary-soft = surface-alt. */
+  --color-primary: #f0f1f4;
+  --color-primary-soft: #22252f;
+  /* Grayscale semantic — same tiering strategy as :root. */
+  --color-good: #5c6370;
+  --color-warning: #9ca3af;
+  --color-critical: #f0f1f4;
+  /* Zone tokens — mirror pola dari :root. `--color-text` di dark = light
+     text (#f0f1f4), jadi opacity tier work terbalik: safe = tipis di dark
+     bg (quiet), alarm = paling terang (loud). */
+  --zone-safe: color-mix(in oklab, var(--color-text) 40%, transparent);
+  --zone-warn: color-mix(in oklab, var(--color-text) 70%, transparent);
+  --zone-alarm: var(--color-text);
+}
+
+/* ---------------------------------------------------------------------------
+ * Full-color mode (opt-in) — token overrides.
+ *
+ * Default = grayscale (design intent). User bisa opt-in via toggle di
+ * Profile → Preferences supaya semantic tokens balik ke warna semantic
+ * asli (primary=blue, good=green, warning=amber, critical=red).
+ *
+ * Hierarchy via font-weight + icon + border tetap primary cue (dibangun
+ * saat grayscale sweep) — warna cuma jadi *tambahan* cue. Ini sesuai
+ * WCAG 2.1 SC 1.4.1 (Use of Color): color TIDAK jadi satu-satunya
+ * pembeda status → color-blind user tetap bisa parse hierarchy.
+ *
+ * Sonner toast tokens (`--success-*`, `--error-*`, dll) SENGAJA tidak
+ * di-override di sini — toast tetap grayscale supaya konsisten dengan
+ * design decision "urgency via wording, bukan hue" (lihat block toast
+ * override di bawah + komentar di layout.tsx).
+ *
+ * Nilai warna original diambil dari commit `5499761` (state sebelum
+ * grayscale sweep).
+ * ------------------------------------------------------------------------- */
+.color-mode {
+  --color-primary: #3b82f6;
+  --color-primary-soft: #dbeafe;
+  --color-good: #22c55e;
+  --color-warning: #f59e0b;
+  --color-critical: #ef4444;
+  /* Zone tokens override — di color mode, bar/gauge pakai warna semantic
+     penuh (bukan opacity tier). Warna otomatis diambil dari
+     `--color-good/warning/critical` yang sudah di-override di atas. */
+  --zone-safe: var(--color-good);
+  --zone-warn: var(--color-warning);
+  --zone-alarm: var(--color-critical);
+}
+.color-mode.dark {
   --color-primary: #60a5fa;
   --color-primary-soft: #1e3a5f;
   --color-good: #34d399;
   --color-warning: #fbbf24;
   --color-critical: #f87171;
+  /* Dark + color mode — sama seperti light color mode, zone dari semantic. */
+  --zone-safe: var(--color-good);
+  --zone-warn: var(--color-warning);
+  --zone-alarm: var(--color-critical);
+}
+
+/* Form invalid border — mirror pattern: default gray, color-mode red. */
+.color-mode form.submitted input:invalid,
+.color-mode form.submitted textarea:invalid,
+.color-mode form.submitted select:invalid {
+  border-color: #f8a0a0;
+}
+.color-mode.dark form.submitted input:invalid,
+.color-mode.dark form.submitted textarea:invalid,
+.color-mode.dark form.submitted select:invalid {
+  border-color: #8b4444;
 }
 
 /* Jangan pakai height:100% di html + overflow-y:auto di body — itu memutus scroll dokumen di Safari/Chrome mobile. */
@@ -56,16 +187,21 @@ body {
   }
 }
 
+/*
+ * Form validation error border pakai neutral gray (bukan red) — full grayscale
+ * mode. Distinguishability dari invalid state = via animation `input-err-shake`
+ * (line ~130) + inline error text di bawah field, bukan hue.
+ */
 form.submitted input:invalid,
 form.submitted textarea:invalid,
 form.submitted select:invalid {
-  border-color: #f8a0a0;
+  border-color: #9ca3af;
 }
 
 .dark form.submitted input:invalid,
 .dark form.submitted textarea:invalid,
 .dark form.submitted select:invalid {
-  border-color: #8b4444;
+  border-color: #5c6370;
 }
 
 select {
@@ -231,6 +367,61 @@ select option {
 
 @media (prefers-reduced-motion: reduce) {
   .card-rise {
+    animation: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Sonner toast — override built-in type themes ke grayscale.
+ *
+ * Sonner exposes CSS vars per-type (`--success-*`, `--error-*`, `--warning-*`,
+ * `--info-*`). Kita alias semuanya ke design token app (`--color-surface` +
+ * `--color-text`) sehingga toast dari `toast.success/error/warning/info`
+ * tidak menghasilkan warna semantic (green/red/amber/blue). Urgency di
+ * toast di-encode via title font-weight + posisi + wording — bukan hue.
+ *
+ * `[data-icon]` selector menutup celah terakhir: icon check/x/! yang
+ * di-render sonner default punya warna hardcoded per type. Kita paksa
+ * `currentColor` supaya ikut warna text token.
+ * ------------------------------------------------------------------------- */
+[data-sonner-toaster] {
+  --normal-bg: var(--color-surface);
+  --normal-text: var(--color-text);
+  --normal-border: var(--color-border);
+  --success-bg: var(--color-surface);
+  --success-text: var(--color-text);
+  --success-border: var(--color-border);
+  --error-bg: var(--color-surface);
+  --error-text: var(--color-text);
+  --error-border: var(--color-border);
+  --warning-bg: var(--color-surface);
+  --warning-text: var(--color-text);
+  --warning-border: var(--color-border);
+  --info-bg: var(--color-surface);
+  --info-text: var(--color-text);
+  --info-border: var(--color-border);
+}
+
+[data-sonner-toast] [data-icon] {
+  color: var(--color-text);
+}
+[data-sonner-toast] [data-icon] svg {
+  fill: currentColor;
+}
+
+/* ---------------------------------------------------------------------------
+ * `prefers-reduced-motion` global overrides — WCAG 2.1 SC 2.3.3.
+ *
+ * Tailwind `animate-pulse` (dipakai di LoadingSkeleton + placeholder UI)
+ * tidak otomatis di-disable. Untuk user yang set reduced motion (vestibular
+ * disorders, motion sickness), pulse yang loop terus bisa mengganggu.
+ * Kita freeze animasi ini tapi TETAP pertahankan `animate-spin` untuk
+ * loading spinner — spinner adalah *functional feedback* (indicator busy),
+ * lebih penting supaya user tahu ada proses berjalan. WCAG mengizinkan
+ * "essential" animations.
+ * ------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse {
     animation: none;
   }
 }

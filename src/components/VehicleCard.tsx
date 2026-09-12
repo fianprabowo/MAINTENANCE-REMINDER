@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { SectionLabel } from "@/components/ui";
 import { Vehicle } from "@/lib/types";
 import StatusBadge from "./StatusBadge";
 import { useTranslation } from "@/lib/i18n";
@@ -82,11 +83,14 @@ export default function VehicleCard({
             </span>
           )}
           {vehicle.status === "good" && (
+            // Status good dot — mode-aware via --zone-safe (green di color
+            // mode, quiet 40% opacity di grayscale). Konsisten dengan bar
+            // fills di OilLifeBar / condition page.
             <span
               role="img"
               aria-label={t("vehicleCard.statusGoodLabel")}
               title={t("vehicleCard.statusGoodLabel")}
-              className="ml-1.5 inline-block h-2 w-2 rounded-full bg-emerald-500 align-middle"
+              className="ml-1.5 inline-block h-2 w-2 rounded-full bg-(--zone-safe) align-middle"
             />
           )}
         </p>
@@ -95,9 +99,9 @@ export default function VehicleCard({
           <FuelBar level={vehicle.fuel_level} />
         </div>
         {pickMode && (
-          <p className="mt-2 text-[10px] font-semibold uppercase tracking-wide text-(--color-primary)">
+          <SectionLabel className="mt-2 text-[10px] font-semibold tracking-wide text-(--color-primary)">
             {isActivePick ? t("vehicleCard.activeAtHome") : t("vehicleCard.tapToSelect")}
-          </p>
+          </SectionLabel>
         )}
       </div>
 

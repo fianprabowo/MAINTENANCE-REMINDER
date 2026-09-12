@@ -21,19 +21,22 @@ export default function FuelLevelHero({ level }: { level: number }) {
   const zone = zoneFromFuel(p);
   // Kumpulan token per-zone di dalam body component (bukan module-level
   // static) supaya string lokalisasi ter-refresh saat locale switch.
+  // Stroke pakai `--zone-*` CSS token yang mode-aware (opacity tier di
+  // grayscale, semantic green/amber/red di color mode). Lihat definisi
+  // di globals.css.
   const zoneUi: Record<Zone, { stroke: string; label: string; sub: string }> = {
     good: {
-      stroke: "stroke-emerald-500",
+      stroke: "stroke-(--zone-safe)",
       label: t("fuelLevelHero.safeLabel"),
       sub: t("fuelLevelHero.safeSub"),
     },
     warn: {
-      stroke: "stroke-amber-500",
+      stroke: "stroke-(--zone-warn)",
       label: t("fuelLevelHero.warnLabel"),
       sub: t("fuelLevelHero.warnSub"),
     },
     bad: {
-      stroke: "stroke-red-500",
+      stroke: "stroke-(--zone-alarm)",
       label: t("fuelLevelHero.badLabel"),
       sub: t("fuelLevelHero.badSub"),
     },
@@ -77,13 +80,17 @@ export default function FuelLevelHero({ level }: { level: number }) {
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+          {/*
+           * Grayscale percent readout — urgency via opacity, bukan hue.
+           * Good = quiet (secondary), warn = full text, bad = bold (max weight).
+           */}
           <span
             className={`text-4xl font-black tabular-nums tracking-tight ${
               zone === "good"
-                ? "text-emerald-600 dark:text-emerald-400"
+                ? "text-(--color-text-secondary)"
                 : zone === "warn"
-                  ? "text-amber-600 dark:text-amber-400"
-                  : "text-red-600 dark:text-red-400"
+                  ? "text-(--color-text)"
+                  : "text-(--color-text) font-black"
             }`}
           >
             {p}%

@@ -13,8 +13,10 @@ import {
   markNotificationRead,
 } from "@/lib/supabase";
 import type { AppNotification } from "@/lib/types";
-import { CardSkeleton } from "@/components/LoadingSkeleton";
 import SwipeableRow from "@/components/SwipeableRow";
+import ConfirmDialog from "@/components/ConfirmDialog";
+import { CardSkeleton } from "@/components/LoadingSkeleton";
+import { Button, SectionLabel } from "@/components/ui";
 import { useAppErrorMessage, useTranslation } from "@/lib/i18n";
 
 /* ──────────────────────────────────────────────────────────────────
@@ -58,19 +60,23 @@ function kindIcon(kind: string): string {
   return "📬";
 }
 
+// Kind tone — mode-aware:
+//   • terlewat  = zone-alarm bg (red di color mode, dark inverted di grayscale)
+//   • mendekati = surface-alt (soft, quiet — informational)
+// Ring tetap monochrome (subtle depth, tidak encode urgency).
 function kindTone(kind: string): {
   ring: string;
   icon: string;
 } {
   if (kind === "reminder_terlewat") {
     return {
-      ring: "border-red-200 dark:border-red-900/40",
-      icon: "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300",
+      ring: "border-(--color-text)/25",
+      icon: "bg-(--zone-alarm) text-(--color-bg)",
     };
   }
   return {
-    ring: "border-amber-200 dark:border-amber-900/40",
-    icon: "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
+    ring: "border-(--color-border)",
+    icon: "bg-(--color-surface-alt) text-(--color-text)",
   };
 }
 
@@ -93,6 +99,20 @@ export default function NotificationsPage() {
    *  pattern used in overview, service-history, and reminder pages so only
    *  one row can be open at a time. */
   const [openSwipeId, setOpenSwipeId] = useState<string | null>(null);
+  /**
+   * Two-step delete gating (pattern konsisten dengan overview / reminder /
+   * service-history / vehicle-detail):
+   *   - `pendingDelete` : notifikasi yang menunggu konfirmasi user.
+   *   - `deletingNotification` : loading flag saat API request in-flight
+   *     (juga di-gate untuk mencegah spam-click "Delete" di ConfirmDialog).
+   *
+   * Sebelum grayscale mode, swipe-delete langsung commit — mengandalkan
+   * red visual cue pada tombol swipe. Setelah grayscale, cue itu hilang
+   * jadi kita normalize pattern-nya ke ConfirmDialog seperti destructive
+   * action lainnya. Cost: satu tap ekstra. Benefit: safeguard konsisten.
+   */
+  const [pendingDelete, setPendingDelete] = useState<AppNotification | null>(null);
+  const [deletingNotification, setDeletingNotification] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/access");
@@ -165,23 +185,48 @@ export default function NotificationsPage() {
     }
   }, [items, unreadCount, refreshGlobal, t, describeAppError]);
 
-  const handleDelete = useCallback(
-    async (n: AppNotification) => {
-      // Close the swipe immediately so the row doesn't visually snap back
-      // mid-removal. Then optimistic remove + persist.
-      setOpenSwipeId(null);
-      const previous = items;
-      setItems((prev) => prev.filter((x) => x.id !== n.id));
-      try {
-        await deleteNotification(n.id);
-        await refreshGlobal();
-      } catch (err) {
-        setItems(previous);
-        toast.error(describeAppError(err, t("notifications.deleteFailed")));
-      }
-    },
-    [items, refreshGlobal, t, describeAppError],
-  );
+  /**
+   * Step 1 dari delete flow. Menutup swipe (agar row tidak snap-back saat
+   * dialog muncul di atas), lalu set `pendingDelete` supaya `<ConfirmDialog>`
+   * ter-render. Tidak panggil API di sini.
+   */
+  const requestDelete = useCallback((n: AppNotification) => {
+    setOpenSwipeId(null);
+    setPendingDelete(n);
+  }, []);
+
+  /**
+   * Step 2 dari delete flow. Optimistic remove — kalau API gagal, restore
+   * items ke previous snapshot. Menutup dialog di akhir baik sukses maupun
+   * gagal (gagal juga bisa di-retry dari toast/UI kalau perlu di masa depan).
+   */
+  const confirmDelete = useCallback(async () => {
+    const target = pendingDelete;
+    if (!target || deletingNotification) return;
+
+    setDeletingNotification(true);
+    const previous = items;
+    setItems((prev) => prev.filter((x) => x.id !== target.id));
+    try {
+      await deleteNotification(target.id);
+      await refreshGlobal();
+    } catch (err) {
+      setItems(previous);
+      toast.error(describeAppError(err, t("notifications.deleteFailed")));
+    } finally {
+      setDeletingNotification(false);
+      setPendingDelete(null);
+    }
+  }, [pendingDelete, deletingNotification, items, refreshGlobal, t, describeAppError]);
+
+  /**
+   * Cancel handler — guard: tidak izinkan close mid-flight supaya user
+   * tidak assume delete di-batalkan padahal API request masih jalan.
+   */
+  const cancelDelete = useCallback(() => {
+    if (deletingNotification) return;
+    setPendingDelete(null);
+  }, [deletingNotification]);
 
   if (authLoading || !user) return null;
 
@@ -201,13 +246,14 @@ export default function NotificationsPage() {
             </p>
           </div>
           {unreadCount > 0 ? (
-            <button
-              type="button"
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={() => void handleMarkAllRead()}
-              className="rounded-xl border border-(--color-border)/70 px-3 py-2 text-[11px] font-semibold text-(--color-text-secondary) transition-colors hover:border-(--color-border) hover:bg-(--color-surface-alt)"
+              className="shrink-0 text-[11px]"
             >
               {t("notifications.markAllRead")}
-            </button>
+            </Button>
           ) : null}
         </header>
 
@@ -227,7 +273,7 @@ export default function NotificationsPage() {
                 onClick={() => setFilter(v)}
                 className={`rounded-full px-3 py-1.5 transition-all duration-150 ${
                   active
-                    ? "bg-(--color-primary) text-white shadow-sm"
+                    ? "bg-(--color-primary) text-(--color-bg) shadow-sm"
                     : "text-(--color-text-secondary) hover:text-(--color-text)"
                 }`}
               >
@@ -239,7 +285,11 @@ export default function NotificationsPage() {
 
         {/* List */}
         {loading ? (
-          <div className="space-y-3">
+          // Skeleton cards untuk match layout notifikasi (list of cards).
+          // Sebelumnya bare `<Spinner>` di tengah — tidak konsisten dengan
+          // pages list lain (overview, reminder, dashboard) yang pakai
+          // `CardSkeleton` supaya user langsung lihat "ada card mau muncul di sini".
+          <div className="space-y-2 pt-2">
             <CardSkeleton />
             <CardSkeleton />
             <CardSkeleton />
@@ -248,9 +298,7 @@ export default function NotificationsPage() {
           <EmptyState filter={filter} />
         ) : (
           <>
-            <p className="text-[11px] text-(--color-text-muted)">
-              {t("notifications.listHint")}
-            </p>
+            <SectionLabel>{t("notifications.listHint")}</SectionLabel>
             {/* role=list/listitem on divs because SwipeableRow renders a
                 `<div>` and HTML doesn't allow `<div>` as direct child of
                 `<ul>` / `<li>`. Same trick used in service-history. */}
@@ -262,7 +310,7 @@ export default function NotificationsPage() {
                     onOpenChange={(open) =>
                       setOpenSwipeId(open ? n.id : null)
                     }
-                    onAction={() => void handleDelete(n)}
+                    onAction={() => requestDelete(n)}
                   >
                     <NotificationCard
                       notification={n}
@@ -276,6 +324,25 @@ export default function NotificationsPage() {
           </>
         )}
       </main>
+
+      {/*
+        Konfirmasi hapus notifikasi — konsisten dengan destructive action
+        di halaman lain (overview / reminder / service-history / profile
+        logout / vehicle-detail delete-mileage). Pattern step-1 (swipe →
+        `requestDelete`) + step-2 (dialog → `confirmDelete`) memastikan
+        pengguna selalu punya second look sebelum data hilang, terlepas
+        dari apakah color cue destructive-nya dimatikan atau tidak.
+      */}
+      <ConfirmDialog
+        open={!!pendingDelete}
+        title={t("notifications.deleteTitle")}
+        message={t("notifications.deleteMessage")}
+        confirmLabel={deletingNotification ? t("notifications.deletingLoading") : t("notifications.deleteConfirm")}
+        cancelLabel={t("notifications.deleteCancel")}
+        variant="danger"
+        onConfirm={() => void confirmDelete()}
+        onCancel={cancelDelete}
+      />
     </div>
   );
 }
@@ -337,7 +404,7 @@ function EmptyState({ filter }: { filter: "all" | "unread" }) {
   const { t } = useTranslation();
   const isUnread = filter === "unread";
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-(--color-border)/70 bg-(--color-surface)/50 px-6 py-16 text-center">
+    <div className="flex flex-1 flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-(--color-border)/60 bg-(--color-surface)/50 px-6 py-16 text-center">
       <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-(--color-surface-alt) text-2xl">
         🎉
       </div>

@@ -23,6 +23,7 @@ import {
 import { CardSkeleton } from "@/components/LoadingSkeleton";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import SwipeableRow from "@/components/SwipeableRow";
+import { Button, IconButton, Modal, SectionLabel, TextInput } from "@/components/ui";
 import {
   REMINDER_PRESETS,
   getReminderPreset,
@@ -61,18 +62,24 @@ function computeStatus(r: Reminder, latestKm: number): ReminderStatus {
   return evalRes.status;
 }
 
+// Reminder status tone — mode-aware via `--zone-*` tokens (safe/warn/alarm):
+//   - aman     : surface-alt (soft) + dot zone-safe
+//   - mendekati: surface-alt + dot zone-warn (monitor)
+//   - telat    : zone-alarm inverted bg (loud alarm) + high-contrast text
+// telat.dot pakai `--color-bg` (bukan zone token) supaya kontras terhadap
+// alarm chip bg — visual "dot pada chip" seperti focus indicator.
 const STATUS_TONE: Record<ReminderStatus, { chip: string; dot: string }> = {
   aman: {
-    chip: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
-    dot: "bg-emerald-500",
+    chip: "bg-(--color-surface-alt) text-(--color-text-secondary)",
+    dot: "bg-(--zone-safe)",
   },
   mendekati: {
-    chip: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
-    dot: "bg-amber-500",
+    chip: "bg-(--color-surface-alt) text-(--color-text)",
+    dot: "bg-(--zone-warn)",
   },
   telat: {
-    chip: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
-    dot: "bg-red-500",
+    chip: "bg-(--zone-alarm) text-(--color-bg) font-bold",
+    dot: "bg-(--color-bg)",
   },
 };
 
@@ -112,12 +119,12 @@ function isoToYmd(iso: string): string {
  * Style tokens
  * ──────────────────────────────────────────────────────────────── */
 
-const PRIMARY_BTN =
-  "inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-(--color-primary) px-4 py-3.5 text-sm font-bold text-white shadow-md shadow-(--color-primary)/30 transition-all duration-200 hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100";
-
 const CHIP_BASE =
   "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-all duration-150 active:scale-95";
-const CHIP_ACTIVE = "bg-blue-500 text-white shadow-sm shadow-blue-500/30";
+// Chip active pakai `--color-text` (dark neutral) untuk match login CTA tone.
+// Sebelumnya bg-blue-500 — sekarang monochrome consistent dengan seluruh app.
+const CHIP_ACTIVE =
+  "bg-(--color-text) text-(--color-bg) shadow-sm shadow-(--color-text)/20";
 const CHIP_IDLE =
   "bg-(--color-surface-alt) text-(--color-text-secondary) hover:text-(--color-text)";
 
@@ -433,29 +440,6 @@ export default function ReminderPage() {
     setEditingId(null);
   }, [submitting]);
 
-  /**
-   * Body scroll lock + Escape-to-close while the bottom sheet is open. We
-   * touch `document.body.style.overflow` directly (not Tailwind class) to
-   * avoid coupling to any global scroll utility class the app might add.
-   */
-  useEffect(() => {
-    if (!showForm) return;
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        closeForm();
-      }
-    };
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.body.style.overflow = prevOverflow;
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [showForm, closeForm]);
-
   const handlePresetPick = useCallback(
     (slug: ReminderPresetSlug) => {
       const p = getReminderPreset(slug);
@@ -630,29 +614,25 @@ export default function ReminderPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <main className="flex flex-1 flex-col px-5 pb-24 pt-5">
-        <button
-          type="button"
+        <IconButton
+          label={t("common.back")}
+          variant="ghost"
+          size="lg"
           onClick={() => router.push(`/vehicles/${id}`)}
-          className="mb-4 self-start text-sm font-semibold text-(--color-text-secondary) transition-colors hover:text-(--color-text)"
+          className="mb-4 self-start"
         >
-          {t("reminderPage.backToVehicle")}
-        </button>
+          <BackArrowIcon className="h-5 w-5" />
+        </IconButton>
 
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-(--color-text-muted)">
-              {t("reminderPage.eyebrow")}
-            </p>
+            <SectionLabel>{t("reminderPage.eyebrow")}</SectionLabel>
             <h1 className="mt-0.5 text-2xl font-bold tracking-tight">{t("reminderPage.title")}</h1>
           </div>
           {showHeaderAddBtn ? (
-            <button
-              type="button"
-              onClick={openForm}
-              className="shrink-0 rounded-2xl bg-(--color-primary) px-4 py-2.5 text-sm font-bold text-white shadow-md shadow-(--color-primary)/30 transition-all hover:brightness-110 active:scale-[0.98]"
-            >
+            <Button variant="primary" size="sm" onClick={openForm} className="shrink-0">
               {t("reminderPage.addBtn")}
-            </button>
+            </Button>
           ) : null}
         </div>
 
@@ -698,149 +678,136 @@ export default function ReminderPage() {
         )}
       </main>
 
-      {/* ── Quick Setup bottom sheet ────────────────────────────
-          Modal pattern (sama dengan service-history): backdrop
-          klik = tutup, Escape = tutup, body scroll lock saat
-          terbuka, focus trap implicit lewat z-index tinggi +
-          overlay menutup interaksi background. */}
-      {showForm ? (
-        <div
-          className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="reminder-form-title"
-        >
-          <button
-            type="button"
-            className="absolute inset-0 bg-black/40 transition-opacity duration-150 hover:bg-black/45"
-            aria-label={t("common.close")}
+      {/* ── Quick Setup bottom sheet ──────────────────────────── */}
+      <Modal
+        open={showForm}
+        onClose={closeForm}
+        variant="sheet"
+        ariaLabelledBy="reminder-form-title"
+        ariaBusy={submitting}
+        dismissible={!submitting}
+        contentClassName="max-h-[85dvh] flex flex-col"
+      >
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-(--color-border)/60 px-5 py-4">
+          <div>
+            <h2
+              id="reminder-form-title"
+              className="text-lg font-extrabold text-(--color-text)"
+            >
+              {editingId ? t("reminderPage.formEditTitle") : t("reminderPage.formAddTitle")}
+            </h2>
+            <p className="mt-0.5 text-xs text-(--color-text-secondary)">
+              {editingId ? t("reminderPage.formEditSubtitle") : t("reminderPage.formAddSubtitle")}
+            </p>
+          </div>
+          <IconButton
+            label={t("common.close")}
             onClick={closeForm}
-          />
-          <div className="relative z-10 flex max-h-[85dvh] w-full max-w-md flex-col rounded-t-2xl bg-(--color-bg) shadow-2xl sm:mx-4 sm:rounded-2xl">
-            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-(--color-border)/60 px-5 py-4">
-              <div>
-                <h2
-                  id="reminder-form-title"
-                  className="text-lg font-extrabold text-(--color-text)"
-                >
-                  {editingId ? t("reminderPage.formEditTitle") : t("reminderPage.formAddTitle")}
-                </h2>
-                <p className="mt-0.5 text-xs text-(--color-text-secondary)">
-                  {editingId ? t("reminderPage.formEditSubtitle") : t("reminderPage.formAddSubtitle")}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={closeForm}
-                className="rounded-lg p-2 text-(--color-text-muted) transition-colors hover:bg-(--color-surface) hover:text-(--color-text)"
-                aria-label={t("common.close")}
-              >
-                <CloseIcon className="h-5 w-5" />
-              </button>
-            </div>
+            disabled={submitting}
+            className="-mr-1 -mt-1"
+          >
+            <CloseIcon className="h-5 w-5" />
+          </IconButton>
+        </div>
 
-            <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-5 py-5">
-              {/* Preset chips */}
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)">
-                  {t("reminderPage.presetLabel")}
-                </p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {REMINDER_PRESETS.map((p) => {
-                    const active = p.slug === presetSlug;
-                    return (
-                      <button
-                        key={p.slug}
-                        type="button"
-                        onClick={() => handlePresetPick(p.slug)}
-                        className={`${CHIP_BASE} ${active ? CHIP_ACTIVE : CHIP_IDLE}`}
-                        aria-pressed={active}
-                      >
-                        <span aria-hidden>{p.icon}</span>
-                        {t(p.labelKey)}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* KM dimension */}
-              <KmField
-                enabled={useKm}
-                onEnabledChange={setUseKm}
-                value={kmValue}
-                onValueChange={(v) => {
-                  // Direct edit ⇒ user wants Manual control. Auto-switching
-                  // here is more discoverable than forcing them to tap the
-                  // segmented control first.
-                  if (kmMode === "auto") setKmMode("manual");
-                  setKmValue(v);
-                }}
-                latestKm={latestKm}
-                suggestedTarget={preset.km > 0 ? latestKm + preset.km : null}
-                alertMode={kmAlertMode}
-                onAlertModeChange={setKmAlertMode}
-                mode={kmMode}
-                onModeChange={handleKmModeChange}
-                suggestion={kmSuggestion}
-              />
-
-              {/* Schedule dimension */}
-              <ScheduleField
-                enabled={useTime}
-                onEnabledChange={handleToggleTime}
-                schedule={schedule}
-                onScheduleChange={(spec) => {
-                  if (timeMode === "auto") setTimeMode("manual");
-                  setSchedule(spec);
-                }}
-                onKindPick={(k) => {
-                  if (timeMode === "auto") setTimeMode("manual");
-                  handleScheduleKindPick(k);
-                }}
-                mode={timeMode}
-                onModeChange={handleTimeModeChange}
-                suggestion={timeSuggestion}
-              />
-
-              {/* Summary preview */}
-              <div className="rounded-xl border border-(--color-border)/40 bg-(--color-surface-alt)/40 p-3">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)">
-                  {t("reminderPage.summary")}
-                </p>
-                <ul className="mt-1 space-y-0.5">
-                  {summaryLines.map((line, i) => (
-                    <li
-                      key={i}
-                      className="text-xs font-medium text-(--color-text-secondary)"
-                    >
-                      {line}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-
-            {/* Sticky footer CTA — selalu terlihat tanpa harus scroll. */}
-            <div className="shrink-0 border-t border-(--color-border)/60 bg-(--color-bg) px-5 py-3 pb-[max(0.75rem,calc(env(safe-area-inset-bottom,0px)+0.5rem))]">
-              <button
-                type="button"
-                onClick={() => void handleSubmit()}
-                disabled={!canSubmit}
-                className={PRIMARY_BTN}
-              >
-                {submitting
-                  ? editingId
-                    ? t("reminderPage.saving")
-                    : t("reminderPage.activating")
-                  : editingId
-                    ? t("reminderPage.saveChanges")
-                    : t("reminderPage.activateReminder")}
-              </button>
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-5 py-5">
+          {/* Preset chips */}
+          <div>
+            <SectionLabel>{t("reminderPage.presetLabel")}</SectionLabel>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {REMINDER_PRESETS.map((p) => {
+                const active = p.slug === presetSlug;
+                return (
+                  <button
+                    key={p.slug}
+                    type="button"
+                    onClick={() => handlePresetPick(p.slug)}
+                    className={`${CHIP_BASE} ${active ? CHIP_ACTIVE : CHIP_IDLE}`}
+                    aria-pressed={active}
+                  >
+                    <span aria-hidden>{p.icon}</span>
+                    {t(p.labelKey)}
+                  </button>
+                );
+              })}
             </div>
           </div>
+
+          {/* KM dimension */}
+          <KmField
+            enabled={useKm}
+            onEnabledChange={setUseKm}
+            value={kmValue}
+            onValueChange={(v) => {
+              // Direct edit ⇒ user wants Manual control. Auto-switching
+              // here is more discoverable than forcing them to tap the
+              // segmented control first.
+              if (kmMode === "auto") setKmMode("manual");
+              setKmValue(v);
+            }}
+            latestKm={latestKm}
+            suggestedTarget={preset.km > 0 ? latestKm + preset.km : null}
+            alertMode={kmAlertMode}
+            onAlertModeChange={setKmAlertMode}
+            mode={kmMode}
+            onModeChange={handleKmModeChange}
+            suggestion={kmSuggestion}
+          />
+
+          {/* Schedule dimension */}
+          <ScheduleField
+            enabled={useTime}
+            onEnabledChange={handleToggleTime}
+            schedule={schedule}
+            onScheduleChange={(spec) => {
+              if (timeMode === "auto") setTimeMode("manual");
+              setSchedule(spec);
+            }}
+            onKindPick={(k) => {
+              if (timeMode === "auto") setTimeMode("manual");
+              handleScheduleKindPick(k);
+            }}
+            mode={timeMode}
+            onModeChange={handleTimeModeChange}
+            suggestion={timeSuggestion}
+          />
+
+          {/* Summary preview */}
+          <div className="rounded-xl border border-(--color-border)/40 bg-(--color-surface-alt)/40 p-3">
+            <SectionLabel>{t("reminderPage.summary")}</SectionLabel>
+            <ul className="mt-1 space-y-0.5">
+              {summaryLines.map((line, i) => (
+                <li
+                  key={i}
+                  className="text-xs font-medium text-(--color-text-secondary)"
+                >
+                  {line}
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
-      ) : null}
+
+        {/* Sticky footer CTA — selalu terlihat tanpa harus scroll. */}
+        <div className="shrink-0 border-t border-(--color-border)/60 bg-(--color-bg) px-5 py-3 pb-[max(0.75rem,calc(env(safe-area-inset-bottom,0px)+0.5rem))]">
+          <Button
+            variant="primary"
+            size="lg"
+            fullWidth
+            loading={submitting}
+            disabled={!canSubmit}
+            onClick={() => void handleSubmit()}
+          >
+            {submitting
+              ? editingId
+                ? t("reminderPage.saving")
+                : t("reminderPage.activating")
+              : editingId
+                ? t("reminderPage.saveChanges")
+                : t("reminderPage.activateReminder")}
+          </Button>
+        </div>
+      </Modal>
 
       <ConfirmDialog
         open={!!pendingDelete}
@@ -1027,7 +994,7 @@ function KmField({
     <div
       className={`rounded-xl border p-3 transition-colors duration-150 ${
         tooLow
-          ? "border-red-400/70 bg-red-50/40 dark:border-red-500/40 dark:bg-red-900/10"
+          ? "border-(--color-text)/45 bg-(--color-surface-alt) ring-2 ring-(--color-text)/25"
           : enabled
             ? "border-(--color-primary)/50 bg-(--color-primary-soft)/40"
             : "border-(--color-border) bg-(--color-surface)"
@@ -1051,9 +1018,9 @@ function KmField({
         />
       ) : null}
 
-      <label className="mt-2 flex items-center gap-2 text-xs text-(--color-text-muted)">
-        <span className="shrink-0">{t("reminderPage.whenReaching")}</span>
-        <input
+      <div className="mt-2">
+        <SectionLabel className="mb-1.5">{t("reminderPage.whenReaching")}</SectionLabel>
+        <TextInput
           type="text"
           inputMode="numeric"
           value={value}
@@ -1062,19 +1029,15 @@ function KmField({
           disabled={!enabled || isAuto}
           readOnly={isAuto}
           aria-label={t("reminderPage.targetKmAria")}
-          aria-invalid={tooLow || undefined}
-          className={`min-w-0 flex-1 rounded-lg border px-2.5 py-1.5 text-sm font-semibold tabular-nums text-(--color-text) outline-none transition-colors ${
-            !enabled
-              ? "cursor-not-allowed border-(--color-border)/40 bg-(--color-surface-alt)/40 text-(--color-text-muted)"
-              : isAuto
-                ? "cursor-default border-(--color-primary)/40 bg-(--color-primary-soft)/30 text-(--color-text)"
-                : tooLow
-                  ? "border-red-400 bg-(--color-surface) focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
-                  : "border-(--color-border) bg-(--color-surface) focus:border-(--color-primary) focus:ring-2 focus:ring-(--color-primary)/20"
+          error={tooLow}
+          className={`tabular-nums font-semibold${
+            isAuto && enabled ? " bg-(--color-primary-soft)/30" : ""
           }`}
+          trailingSlot={
+            <span className="text-xs font-semibold text-(--color-text-muted)">km</span>
+          }
         />
-        <span className="shrink-0 text-(--color-text-secondary)">km</span>
-      </label>
+      </div>
 
       {/* Hint / error / source-note line. Source note (when in auto) wins
           over the generic hint so user understands *why* this number. */}
@@ -1097,7 +1060,7 @@ function KmField({
             </span>
           </p>
         ) : tooLow ? (
-          <p className="mt-1 text-[11px] font-medium text-red-600 dark:text-red-400">
+          <p className="mt-1 text-[11px] font-bold text-(--color-text)">
             {t("reminderPage.targetTooLow", { km: formatNumber(latestKm) })}
           </p>
         ) : (
@@ -1113,9 +1076,7 @@ function KmField({
       {/* Mode pengingat — apakah sekali atau berulang setelah threshold */}
       {enabled ? (
         <div className="mt-3 border-t border-(--color-border)/40 pt-2.5">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)">
-            {t("reminderPage.afterThreshold")}
-          </p>
+          <SectionLabel>{t("reminderPage.afterThreshold")}</SectionLabel>
           <div className="mt-1.5 flex flex-wrap gap-2">
             {(
               [
@@ -1214,9 +1175,9 @@ function ScheduleField({
         // Auto mode preview: show the computed date + source note. Inputs
         // hidden — user must tap "Manual" to tweak.
         <div className="mt-3 rounded-lg border border-(--color-primary)/40 bg-(--color-primary-soft)/30 p-3">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-(--color-primary)">
+          <SectionLabel className="text-(--color-primary)">
             {t("reminderPage.remindOn")}
-          </p>
+          </SectionLabel>
           <p className="mt-0.5 text-sm font-bold tabular-nums text-(--color-text)">
             {suggestion.iso
               ? formatDate(suggestion.iso, {
@@ -1250,9 +1211,7 @@ function ScheduleField({
         <div className="mt-3 space-y-3">
           {/* Tipe pengingat */}
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)">
-              {t("reminderPage.reminderType")}
-            </p>
+            <SectionLabel>{t("reminderPage.reminderType")}</SectionLabel>
             <div className="mt-1.5 flex flex-wrap gap-2">
               <button
                 type="button"
@@ -1282,22 +1241,19 @@ function ScheduleField({
           {/* Sekali → date */}
           {schedule?.kind === "once" ? (
             <div>
-              <label
-                htmlFor="schedule-once-date"
-                className="text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)"
-              >
-                {t("reminderPage.remindOnDate")}
+              <label htmlFor="schedule-once-date" className="block">
+                <SectionLabel as="span">{t("reminderPage.remindOnDate")}</SectionLabel>
+                <TextInput
+                  id="schedule-once-date"
+                  type="date"
+                  value={isoToYmd(schedule.once_at)}
+                  min={todayYmd()}
+                  onChange={(e) =>
+                    onScheduleChange({ kind: "once", once_at: localYmdToIso(e.target.value) })
+                  }
+                  className="mt-1 tabular-nums"
+                />
               </label>
-              <input
-                id="schedule-once-date"
-                type="date"
-                value={isoToYmd(schedule.once_at)}
-                min={todayYmd()}
-                onChange={(e) =>
-                  onScheduleChange({ kind: "once", once_at: localYmdToIso(e.target.value) })
-                }
-                className="mt-1 w-full rounded-lg border border-(--color-border) bg-(--color-surface) px-3 py-2 text-sm tabular-nums outline-none transition-colors focus:border-(--color-primary) focus:ring-2 focus:ring-(--color-primary)/20"
-              />
             </div>
           ) : null}
 
@@ -1305,9 +1261,7 @@ function ScheduleField({
           {schedule && schedule.kind !== "once" ? (
             <>
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)">
-                  {t("reminderPage.timeInterval")}
-                </p>
+                <SectionLabel>{t("reminderPage.timeInterval")}</SectionLabel>
                 <div className="mt-1.5 flex flex-wrap gap-2">
                   {(
                     [
@@ -1335,9 +1289,7 @@ function ScheduleField({
               {/* Weekly → multi-select hari */}
               {schedule.kind === "weekly" ? (
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)">
-                    {t("reminderPage.pickWeekdays")}
-                  </p>
+                  <SectionLabel>{t("reminderPage.pickWeekdays")}</SectionLabel>
                   <div className="mt-1.5 flex flex-wrap gap-2">
                     {WEEKDAYS.map((w) => {
                       const active = schedule.weekdays.includes(w.value);
@@ -1366,27 +1318,24 @@ function ScheduleField({
               {/* Monthly → day of month */}
               {schedule.kind === "monthly" ? (
                 <div>
-                  <label
-                    htmlFor="schedule-dom"
-                    className="text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)"
-                  >
-                    {t("reminderPage.dayOfMonth")}
+                  <label htmlFor="schedule-dom" className="block">
+                    <SectionLabel as="span">{t("reminderPage.dayOfMonth")}</SectionLabel>
+                    <TextInput
+                      id="schedule-dom"
+                      type="number"
+                      min={1}
+                      max={31}
+                      value={schedule.day_of_month || ""}
+                      onChange={(e) => {
+                        const n = parseInt(e.target.value, 10);
+                        onScheduleChange({
+                          kind: "monthly",
+                          day_of_month: Number.isFinite(n) ? Math.min(31, Math.max(1, n)) : 1,
+                        });
+                      }}
+                      className="mt-1 w-24 tabular-nums font-semibold"
+                    />
                   </label>
-                  <input
-                    id="schedule-dom"
-                    type="number"
-                    min={1}
-                    max={31}
-                    value={schedule.day_of_month || ""}
-                    onChange={(e) => {
-                      const n = parseInt(e.target.value, 10);
-                      onScheduleChange({
-                        kind: "monthly",
-                        day_of_month: Number.isFinite(n) ? Math.min(31, Math.max(1, n)) : 1,
-                      });
-                    }}
-                    className="mt-1 w-24 rounded-lg border border-(--color-border) bg-(--color-surface) px-3 py-2 text-sm font-semibold tabular-nums outline-none transition-colors focus:border-(--color-primary) focus:ring-2 focus:ring-(--color-primary)/20"
-                  />
                   <p className="mt-1 text-[11px] text-(--color-text-muted)">
                     {t("reminderPage.shortMonthHint")}
                   </p>
@@ -1444,7 +1393,7 @@ function ModeSegment({
             onClick={() => onChange(v)}
             className={`rounded-full px-2.5 py-1 transition-all duration-150 ${
               active
-                ? "bg-(--color-primary) text-white shadow-sm"
+                ? "bg-(--color-primary) text-(--color-bg) shadow-sm"
                 : "text-(--color-text-secondary) hover:text-(--color-text)"
             }`}
           >
@@ -1460,11 +1409,15 @@ function ModeSegment({
  *  fallback. Tiny visual cue so user can tell at a glance whether the
  *  number is data-driven or just an estimate. */
 function SystemDot({ source }: { source: "history" | "fallback" | "none" }) {
+  // Source dot — mode-aware:
+  //   history  = --color-primary (blue di color mode, dark neutral di grayscale)
+  //   fallback = --zone-warn (amber semantic di color mode, mid opacity di grayscale)
+  //   none     = muted (informational, no urgency)
   const cls =
     source === "history"
       ? "bg-(--color-primary)"
       : source === "fallback"
-        ? "bg-amber-500"
+        ? "bg-(--zone-warn)"
         : "bg-(--color-text-muted)";
   return <span aria-hidden className={`mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full ${cls}`} />;
 }
@@ -1495,7 +1448,7 @@ function ToggleHeader({
       <span
         className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border ${
           enabled
-            ? "border-(--color-primary) bg-(--color-primary) text-white"
+            ? "border-(--color-primary) bg-(--color-primary) text-(--color-bg)"
             : "border-(--color-border) bg-(--color-surface)"
         }`}
         aria-hidden
@@ -1522,7 +1475,7 @@ function EmptyReminderCTA({ onClick, hidden }: { onClick: () => void; hidden: bo
         aria-label={t("reminderPage.emptyAria")}
       >
         <div className="mb-5 flex h-[7.25rem] w-full max-w-[200px] items-center justify-center rounded-2xl border-2 border-dashed border-(--color-primary)/35 bg-(--color-primary-soft) transition-colors group-hover:border-(--color-primary)/55 group-hover:bg-(--color-primary)/15">
-          <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-(--color-primary) text-white shadow-lg shadow-(--color-primary)/35 transition-transform group-hover:scale-105 group-active:scale-95">
+          <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-(--color-primary) text-(--color-bg) shadow-lg shadow-(--color-primary)/35 transition-transform group-hover:scale-105 group-active:scale-95">
             <PlusIcon className="h-11 w-11" />
           </div>
         </div>
@@ -1545,6 +1498,25 @@ function EmptyReminderCTA({ onClick, hidden }: { onClick: () => void; hidden: bo
 /* ──────────────────────────────────────────────────────────────────
  * Icons
  * ──────────────────────────────────────────────────────────────── */
+
+function BackArrowIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+    >
+      <line x1="19" y1="12" x2="5" y2="12" />
+      <polyline points="12 19 5 12 12 5" />
+    </svg>
+  );
+}
 
 function PlusIcon({ className }: { className?: string }) {
   return (
