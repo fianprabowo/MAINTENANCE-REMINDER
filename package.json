@@ -13,11 +13,11 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.103.2",
     "leaflet": "^1.9.4",
+    "lightweight-charts": "^5.2.1",
     "next": "^15.3.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-leaflet": "^5.0.0",
-    "recharts": "^2.15.3",
     "sonner": "^2.0.3"
   },
   "devDependencies": {

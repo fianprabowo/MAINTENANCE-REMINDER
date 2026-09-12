@@ -16,18 +16,55 @@ import AddMileageModal from "@/components/AddMileageModal";
 import StatusBadge from "@/components/StatusBadge";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { DetailSkeleton } from "@/components/LoadingSkeleton";
+import { Button, IconButton, SectionLabel } from "@/components/ui";
 import { toast } from "sonner";
 import { useAppErrorMessage, useTranslation } from "@/lib/i18n";
 
 const btnPress = "transition-all duration-200 active:scale-95";
 
 /**
- * Initial + per-scroll page size for the mileage timeline. 10 keeps the
- * cold-load DOM small (cheap parse + scroll smoothness on low-end
- * devices) and still shows enough rows to convey "this is a list" on
- * first paint.
+ * Timeline mileage pagination — hybrid FE reveal strategy:
+ *
+ *   1. Fetch SEKALI dari DB dengan cap `HISTORY_MAX_FETCH` (500 rows).
+ *      Untuk user tipikal (< 200 entries/tahun) ini fetch semua history
+ *      dalam 1 round-trip → payload ~40KB gzipped, mobile 4G < 500ms.
+ *      Sebelumnya cursor-based backend paging (fetch 10 → scroll → fetch 10 lagi)
+ *      yang bikin extra network round-trip tiap scroll → laggy UX.
+ *
+ *   2. Client-side reveal `HISTORY_VISIBLE_INCREMENT` (10) rows per scroll.
+ *      IntersectionObserver bertugas trigger `setVisibleCount(v => v + 10)`
+ *      saat sentinel masuk viewport. Karena data sudah di-memory, reveal
+ *      instant (tidak perlu loading state).
+ *
+ *   3. Cap 500 = safety net untuk user dengan history sangat panjang
+ *      (mis. commercial vehicle 10+ tahun). Kalau mereka hit cap, kita
+ *      show subtle "500 latest" notice — trade-off yang acceptable karena
+ *      user jarang butuh scroll balik ratusan entries.
+ *
+ * Dashboard mileage chart tetap pakai default `limit=50` di service
+ * (untuk chart yang cuma butuh recent data), tidak terpengaruh.
  */
-const HISTORY_PAGE_SIZE = 10;
+const HISTORY_MAX_FETCH = 500;
+const HISTORY_VISIBLE_INCREMENT = 10;
+
+function BackIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+    >
+      <line x1="19" y1="12" x2="5" y2="12" />
+      <polyline points="12 19 5 12 12 5" />
+    </svg>
+  );
+}
 
 function TrashIcon({ className }: { className?: string }) {
   return (
@@ -52,13 +89,10 @@ export default function VehicleDetailPage() {
   const [deleting, setDeleting] = useState(false);
   const [mileageModalOpen, setMileageModalOpen] = useState(false);
   const [historyLogs, setHistoryLogs] = useState<MileageLog[]>([]);
-  // Pagination state for the timeline. We use cursor-based paging keyed
-  // on the OLDEST visible row's `created_at`. `hasMore` is conservative:
-  // we only assume more pages exist when the last fetch returned a full
-  // page (=PAGE_SIZE rows). One-shot false trigger is fine because the
-  // sentinel will simply unmount.
-  const [loadingMoreHistory, setLoadingMoreHistory] = useState(false);
-  const [hasMoreHistory, setHasMoreHistory] = useState(false);
+  // FE-pagination state: berapa banyak row yang saat ini ditampilkan.
+  // Semua data sudah di-fetch upfront (satu round-trip, cap 500).
+  // Increment via IntersectionObserver saat user scroll ke bawah.
+  const [visibleCount, setVisibleCount] = useState(HISTORY_VISIBLE_INCREMENT);
   // Pending delete target — drives ConfirmDialog open state and carries
   // the row needed for both the user-facing message and the API call.
   const [pendingDeleteMileage, setPendingDeleteMileage] = useState<MileageLog | null>(null);
@@ -68,52 +102,31 @@ export default function VehicleDetailPage() {
 
   const refreshVehicleData = useCallback(async () => {
     if (!id) return;
-    // Background refresh — preserve scroll-loaded state. If the user has
-    // already paged further (e.g. 30 rows visible), refetching only the
-    // first 10 would visually "lose" the lower entries until they re-
-    // scrolled. So we re-fetch up to whatever they've already loaded
-    // (capped at PAGE_SIZE on initial state).
-    setHistoryLogs((prev) => {
-      const fetchSize = Math.max(prev.length, HISTORY_PAGE_SIZE);
-      void Promise.allSettled([
-        fetchVehicleDetail(id as string),
-        fetchMileageHistory(id as string, { limit: fetchSize }),
-      ]).then(([detailRes, logsRes]) => {
-        if (detailRes.status === "fulfilled" && detailRes.value) {
-          setDetail(detailRes.value);
-        }
-        if (logsRes.status === "fulfilled") {
-          setHistoryLogs(logsRes.value);
-          // After a refresh we don't know if there's "more" beyond what
-          // we asked for — assume yes only when the slot is full.
-          setHasMoreHistory(logsRes.value.length === fetchSize);
-        }
-      });
-      return prev; // setState callback used purely to read latest length
+    // Background refresh — refetch full history (up to cap). Karena semua
+    // history sudah di-memory, ini cukup re-sync tanpa perlu track offset
+    // atau cursor. `visibleCount` sengaja TIDAK direset supaya scroll
+    // position user tetap terjaga (mis. dia sudah reveal 30 rows, setelah
+    // tambah mileage baru dia masih lihat 30 rows terbaru).
+    void Promise.allSettled([
+      fetchVehicleDetail(id as string),
+      fetchMileageHistory(id as string, { limit: HISTORY_MAX_FETCH }),
+    ]).then(([detailRes, logsRes]) => {
+      if (detailRes.status === "fulfilled" && detailRes.value) {
+        setDetail(detailRes.value);
+      }
+      if (logsRes.status === "fulfilled") {
+        setHistoryLogs(logsRes.value);
+      }
     });
   }, [id]);
 
-  const loadMoreHistory = useCallback(async () => {
-    if (!id || loadingMoreHistory || !hasMoreHistory) return;
-    const cursor = historyLogs[historyLogs.length - 1]?.created_at;
-    if (!cursor) return;
-    setLoadingMoreHistory(true);
-    try {
-      const next = await fetchMileageHistory(id as string, {
-        limit: HISTORY_PAGE_SIZE,
-        before: cursor,
-      });
-      setHistoryLogs((prev) => [...prev, ...next]);
-      // If fewer rows came back than requested, we've hit the end.
-      setHasMoreHistory(next.length === HISTORY_PAGE_SIZE);
-    } catch {
-      // Soft fail: don't toast — user can scroll again to retry.
-      // Setting hasMore=true again means the sentinel will trigger on
-      // next intersection.
-    } finally {
-      setLoadingMoreHistory(false);
-    }
-  }, [id, loadingMoreHistory, hasMoreHistory, historyLogs]);
+  // Reveal 10 more rows from the already-fetched array. Pure state
+  // update — no network call, so no loading state needed.
+  const showMoreHistory = useCallback(() => {
+    setVisibleCount((v) =>
+      Math.min(v + HISTORY_VISIBLE_INCREMENT, historyLogs.length),
+    );
+  }, [historyLogs.length]);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/access");
@@ -126,12 +139,13 @@ export default function VehicleDetailPage() {
     const run = async () => {
       setLoading(true);
       try {
-        // Initial cold load — fan out detail+history; both are independent.
-        // History is paginated (lazy-loaded on scroll) so we only ask for
-        // the first page here.
+        // Initial cold load — fan out detail + FULL history (cap 500) in
+        // parallel. History dipagination di FE (lihat konstanta di atas),
+        // jadi kita fetch semua sekaligus di sini supaya scroll reveal
+        // berikutnya tidak butuh network round-trip lagi.
         const [detailRes, logsRes] = await Promise.all([
           fetchVehicleDetail(id as string),
-          fetchMileageHistory(id as string, { limit: HISTORY_PAGE_SIZE }).catch(
+          fetchMileageHistory(id as string, { limit: HISTORY_MAX_FETCH }).catch(
             () => [] as MileageLog[],
           ),
         ]);
@@ -142,9 +156,6 @@ export default function VehicleDetailPage() {
         }
         setDetail(detailRes);
         setHistoryLogs(logsRes);
-        // If we got a full page back, there *might* be more — sentinel
-        // will probe. If less, we've already shown everything.
-        setHasMoreHistory(logsRes.length === HISTORY_PAGE_SIZE);
       } catch {
         if (!cancelled) router.replace("/dashboard");
         return;
@@ -250,43 +261,48 @@ export default function VehicleDetailPage() {
           <DetailSkeleton />
         ) : (
           <>
-            {/* Top bar: back + delete icon */}
+            {/* Top bar: back + delete */}
             <div className="mb-5 flex items-center justify-between">
-              <button
-                type="button"
+              <IconButton
+                label={t("vehicleDetail.back")}
+                variant="ghost"
+                size="lg"
                 onClick={() => router.push("/dashboard")}
-                className={`rounded-lg px-1 py-0.5 text-sm font-semibold text-(--color-text-secondary) hover:text-(--color-text) ${btnPress}`}
+                className="-ml-2"
               >
-                ← {t("vehicleDetail.back")}
-              </button>
+                <BackIcon className="h-5 w-5" />
+              </IconButton>
 
               {!confirmDelete ? (
-                <button
-                  type="button"
+                <IconButton
+                  label={t("vehicleDetail.deleteAria")}
+                  variant="ghost"
                   onClick={() => setConfirmDelete(true)}
-                  className={`flex h-9 w-9 items-center justify-center rounded-lg bg-red-50 text-red-500 hover:bg-red-100 dark:bg-red-900/15 dark:text-red-400 dark:hover:bg-red-900/30 ${btnPress}`}
-                  title={t("vehicleDetail.deleteTitle")}
-                  aria-label={t("vehicleDetail.deleteAria")}
+                  // Grayscale destructive: base neutral (text-secondary), hover
+                  // ramps up ke full text + subtle bg. Warning weight ada di
+                  // ConfirmDialog yang muncul saat click, bukan di icon color.
+                  className="text-(--color-text-secondary) hover:bg-(--color-surface-alt) hover:text-(--color-text)"
                 >
                   <TrashIcon className="h-5 w-5" />
-                </button>
+                </IconButton>
               ) : (
                 <div className="flex items-center gap-2">
-                  <button
-                    type="button"
+                  <Button
+                    variant="secondary"
+                    size="sm"
                     onClick={() => setConfirmDelete(false)}
-                    className={`rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700 ${btnPress}`}
+                    disabled={deleting}
                   >
                     {t("vehicleDetail.cancelSlim")}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleDelete}
-                    disabled={deleting}
-                    className={`rounded-lg bg-red-100 px-3 py-1.5 text-xs font-bold text-red-600 hover:bg-red-200 disabled:pointer-events-none disabled:opacity-50 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50 ${btnPress}`}
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => void handleDelete()}
+                    loading={deleting}
                   >
-                    {deleting ? "…" : t("vehicleDetail.deleteSlim")}
-                  </button>
+                    {t("vehicleDetail.deleteSlim")}
+                  </Button>
                 </div>
               )}
             </div>
@@ -313,7 +329,6 @@ export default function VehicleDetailPage() {
                 label={t("vehicleDetail.statKm")}
                 value={currentKm !== undefined ? formatNumber(currentKm) : "—"}
                 sub={currentKm !== undefined ? t("vehicleDetail.statKmSubActive") : t("vehicleDetail.statKmSubEmpty")}
-                onPress={openMileageModal}
                 accent
               />
               <StatCard
@@ -333,25 +348,37 @@ export default function VehicleDetailPage() {
               />
             </section>
 
+            <Button variant="primary" size="lg" fullWidth className="mt-5" onClick={openMileageModal}>
+              {t("motorFuelEstimator.addKm")}
+            </Button>
+
             {/* Action utama + sekunder */}
             <section className="mt-5 space-y-3">
               <div className="grid grid-cols-2 gap-3">
+                {/*
+                  Secondary CTA pair — migrasi dari hardcoded gray-100/zinc-800
+                  ke design token (`--color-surface-alt` + `--color-text-secondary`).
+                  Konsisten dengan `Button variant="secondary"` primitive.
+                */}
                 <Link
                   href={`/vehicles/${id}/service-history`}
-                  className={`block rounded-xl bg-gray-100 py-3 text-center text-sm font-semibold text-gray-700 hover:bg-gray-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700 ${btnPress}`}
+                  className={`block rounded-xl bg-(--color-surface-alt) py-3 text-center text-sm font-semibold text-(--color-text-secondary) transition-colors hover:bg-(--color-surface) hover:text-(--color-text) ${btnPress}`}
                 >
                   {t("vehicleDetail.ctaServiceHistory")}
                 </Link>
                 <Link
                   href={`/vehicles/${id}/reminder`}
-                  className={`block rounded-xl bg-gray-100 py-3 text-center text-sm font-semibold text-gray-700 hover:bg-gray-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700 ${btnPress}`}
+                  className={`block rounded-xl bg-(--color-surface-alt) py-3 text-center text-sm font-semibold text-(--color-text-secondary) transition-colors hover:bg-(--color-surface) hover:text-(--color-text) ${btnPress}`}
                 >
                   {t("vehicleDetail.ctaReminder")}
                 </Link>
               </div>
               <Link
                 href={`/vehicles/${id}/condition`}
-                className={`flex items-center justify-between rounded-xl bg-gradient-to-br from-emerald-50 to-sky-50 px-4 py-3.5 text-sm font-semibold text-(--color-text) ring-1 ring-emerald-200/60 hover:from-emerald-100 hover:to-sky-100 dark:from-emerald-500/10 dark:to-sky-500/10 dark:ring-emerald-500/20 dark:hover:from-emerald-500/15 dark:hover:to-sky-500/15 ${btnPress}`}
+                // Gradient decorative (emerald→sky) di-neutralize jadi solid
+                // surface — match login tone (flat neutral, tanpa gradient
+                // color).
+                className={`flex items-center justify-between rounded-xl bg-(--color-surface-alt) px-4 py-3.5 text-sm font-semibold text-(--color-text) ring-1 ring-(--color-border)/60 transition-colors hover:bg-(--color-surface) ${btnPress}`}
               >
                 <span className="flex items-center gap-2.5">
                   <span className="text-lg" aria-hidden>
@@ -370,47 +397,60 @@ export default function VehicleDetailPage() {
               </Link>
             </section>
 
-            {/* Timeline KM */}
+            {/* Timeline KM — pakai `--color-surface` (auto-adapt via .dark),
+                bukan `bg-white dark:bg-(--color-surface)`. Lebih clean. */}
             <section
               id="mileage-timeline"
-              className="mt-6 scroll-mt-24 rounded-xl bg-white p-4 shadow-sm ring-1 ring-(--color-border)/50 dark:bg-(--color-surface)"
+              className="mt-6 scroll-mt-24 rounded-xl bg-(--color-surface) p-4 shadow-sm ring-1 ring-(--color-border)/50"
             >
               <div className="mb-3 flex items-baseline justify-between">
-                <h2 className="text-[11px] font-bold uppercase tracking-wider text-(--color-text-muted)">
-                  {t("vehicleDetail.timelineTitle")}
-                </h2>
+                <SectionLabel as="h2">{t("vehicleDetail.timelineTitle")}</SectionLabel>
                 {historyLogs[0] ? (
                   <span className="text-[11px] font-semibold text-(--color-text-muted)">
                     {t("vehicleDetail.lastUpdateAt", { when: formatRelativeLocalized(historyLogs[0].created_at, { t, formatDate, locale }) })}
                   </span>
                 ) : null}
               </div>
-              <HistoryTimeline logs={historyLogs} onDelete={requestDeleteMileage} />
+              <HistoryTimeline
+                logs={historyLogs.slice(0, visibleCount)}
+                onDelete={requestDeleteMileage}
+              />
 
-              {/* Lazy-load sentinel + status row.
-                  - Sentinel only renders when there *might* be more rows.
-                    IntersectionObserver fires loadMore on entering viewport.
-                  - Loading text shown while fetch in flight.
-                  - "Akhir riwayat" indicator shown once we've reached the
-                    end (>= page size of rows total). Tiny, low-emphasis.
+              {/* Scroll-to-reveal sentinel + counter hint — FE pagination.
+                  - Data sudah di-memory (fetched upfront), jadi tidak ada
+                    async load. Sentinel cukup increment `visibleCount`.
+                  - Counter text jadi visual affordance: tanpa ini user
+                    tidak tahu ada row tersembunyi (sentinel invisible).
+                    Copy: "Menampilkan 10 dari 47 · scroll untuk memuat lebih".
+                  - Setelah semua row terlihat, tampilkan "end of history"
+                    label sebagai visual anchor. Threshold-nya = increment
+                    (10) supaya label tidak muncul untuk list pendek yang
+                    tidak butuh reveal sama sekali.
               */}
-              {hasMoreHistory ? (
-                <HistorySentinel
-                  onIntersect={() => void loadMoreHistory()}
-                  loading={loadingMoreHistory}
-                  loadingLabel={t("vehicleDetail.loadingMore")}
-                />
-              ) : historyLogs.length > HISTORY_PAGE_SIZE ? (
-                <p className="mt-3 text-center text-[10px] font-semibold uppercase tracking-wider text-(--color-text-muted)">
-                  {t("vehicleDetail.endOfHistory")}
-                </p>
+              {visibleCount < historyLogs.length ? (
+                <>
+                  <p
+                    className="mt-3 text-center text-[11px] font-medium text-(--color-text-muted)"
+                    aria-live="polite"
+                  >
+                    {t("vehicleDetail.historyPaginationCounter", {
+                      shown: visibleCount,
+                      total: historyLogs.length,
+                    })}
+                  </p>
+                  <HistorySentinel onIntersect={showMoreHistory} />
+                </>
+              ) : historyLogs.length > HISTORY_VISIBLE_INCREMENT ? (
+                <SectionLabel className="mt-3 text-center">{t("vehicleDetail.endOfHistory")}</SectionLabel>
               ) : null}
             </section>
 
             {/* Catatan — hanya jika ada */}
             {notes ? (
-              <section className="mt-4 rounded-xl bg-gray-50 p-4 dark:bg-zinc-900/60">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)">{t("vehicleDetail.notesTitle")}</p>
+              // Notes section — migrasi ke `--color-surface` token supaya
+              // theme-consistent (dulu bg-gray-50 / bg-zinc-900/60 hardcoded).
+              <section className="mt-4 rounded-xl bg-(--color-surface) p-4 ring-1 ring-(--color-border)/50">
+                <SectionLabel>{t("vehicleDetail.notesTitle")}</SectionLabel>
                 <p className="mt-1 text-sm leading-relaxed text-(--color-text)">{notes}</p>
               </section>
             ) : null}
@@ -418,9 +458,9 @@ export default function VehicleDetailPage() {
             {/* Reminder singkat */}
             {reminderCount > 0 && (
               <section className="mt-6">
-                <h2 className="mb-3 text-[11px] font-bold uppercase tracking-wider text-(--color-text-muted)">
+                <SectionLabel as="h2" className="mb-3">
                   {t("vehicleDetail.serviceReminderTitle")}
-                </h2>
+                </SectionLabel>
                 <ul className="space-y-2.5">
                   {detail.reminders.map((r) => {
                     const isOverdue = r.is_overdue_km || r.is_overdue_date;
@@ -428,7 +468,11 @@ export default function VehicleDetailPage() {
                       <li
                         key={r.id}
                         className={`rounded-xl p-4 transition-all duration-200 hover:shadow-md ${
-                          isOverdue ? "bg-red-50 dark:bg-red-900/20" : "bg-white shadow-sm ring-1 ring-(--color-border)/50 dark:bg-(--color-surface)"
+                          // Grayscale overdue highlight: subtle bg + strong ring,
+                          // bukan red tint. Urgency via border weight.
+                          isOverdue
+                            ? "bg-(--color-surface-alt) ring-2 ring-(--color-text)/30"
+                            : "bg-(--color-surface) shadow-sm ring-1 ring-(--color-border)/50"
                         }`}
                       >
                         <div className="flex items-center justify-between gap-2">
@@ -436,7 +480,8 @@ export default function VehicleDetailPage() {
                             {r.service_type === "light" ? t("vehicleDetail.serviceLight") : t("vehicleDetail.serviceHeavy")}
                           </span>
                           {isOverdue ? (
-                            <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-[11px] font-bold text-red-600 dark:bg-red-900/40 dark:text-red-400">
+                            // Inverted "loud" badge — dark bg + light text.
+                            <span className="rounded-full bg-(--color-text) px-2.5 py-0.5 text-[11px] font-bold text-(--color-bg)">
                               {t("vehicleDetail.overdueBadge")}
                             </span>
                           ) : null}
@@ -494,28 +539,24 @@ export default function VehicleDetailPage() {
 }
 
 /**
- * Invisible-ish sentinel that triggers `onIntersect` when the user
- * scrolls it into view (or near it via `rootMargin`). When loading is
- * true we render a spinner so users get feedback that more rows are on
- * the way.
+ * Sentinel yang trigger `onIntersect` saat user scroll ke area sentinel
+ * (atau mendekatinya via `rootMargin`). Karena data sudah di-memory
+ * (FE pagination — lihat konstanta HISTORY_MAX_FETCH di atas), sentinel
+ * ini pure trigger tanpa loading state.
  *
- * Why a separate component:
+ * Why separate component:
  *   - Encapsulates the IntersectionObserver lifecycle so the parent's
  *     useEffect dependency list stays clean.
  *   - Re-attaches the observer when `onIntersect` identity changes
- *     (which happens whenever historyLogs/cursor changes — exactly the
- *     points where a fresh observation should be allowed to fire).
- *   - rootMargin pre-fetches before the user actually hits the bottom,
- *     making the load feel seamless rather than "scroll-and-wait".
+ *     (which happens whenever historyLogs.length changes — exactly the
+ *     point where a fresh observation should be allowed to fire).
+ *   - rootMargin pre-triggers before the user actually hits the bottom,
+ *     making the reveal feel seamless.
  */
 function HistorySentinel({
   onIntersect,
-  loading,
-  loadingLabel,
 }: {
   onIntersect: () => void;
-  loading: boolean;
-  loadingLabel: string;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
 
@@ -535,8 +576,8 @@ function HistorySentinel({
         if (entry?.isIntersecting) onIntersect();
       },
       {
-        // Pre-load 200px before sentinel actually enters viewport so the
-        // user rarely sees a "loading…" stall.
+        // Pre-trigger 200px before sentinel actually enters viewport so
+        // the reveal feels seamless (rows appear before user hits bottom).
         rootMargin: "0px 0px 200px 0px",
         threshold: 0,
       },
@@ -545,23 +586,9 @@ function HistorySentinel({
     return () => obs.disconnect();
   }, [onIntersect]);
 
-  return (
-    <div
-      ref={ref}
-      className="flex h-10 items-center justify-center text-[11px] text-(--color-text-muted)"
-      aria-live="polite"
-    >
-      {loading ? (
-        <span className="flex items-center gap-2">
-          <span
-            aria-hidden
-            className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-(--color-border) border-t-(--color-primary)"
-          />
-          {loadingLabel}
-        </span>
-      ) : null}
-    </div>
-  );
+  // Small transparent sentinel — no visible UI needed since reveal is
+  // instant (no async load). Keeps DOM cheap.
+  return <div ref={ref} aria-hidden className="h-6" />;
 }
 
 /**
@@ -623,34 +650,25 @@ function StatCard({
   label,
   value,
   sub,
-  onPress,
   accent,
 }: {
   label: string;
   value: string;
   sub?: string;
-  onPress?: () => void;
   accent?: boolean;
 }) {
-  const body = (
-    <>
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-(--color-text-muted)">{label}</p>
-      <p className={`mt-1 truncate text-lg font-bold tabular-nums ${accent ? "text-blue-600 dark:text-blue-400" : "text-(--color-text)"}`}>
+  return (
+    <div className="rounded-xl bg-(--color-surface) p-4 text-left shadow-sm ring-1 ring-(--color-border)/40 transition-all duration-200 hover:shadow-md">
+      <SectionLabel>{label}</SectionLabel>
+      {/*
+       * `accent` sekarang cuma pakai font-weight yang lebih strong — sebelumnya
+       * text-blue-600 (biru). Login tone monochrome jadi kita tidak bedain
+       * accent stat pakai hue, tapi via weight/size (extra-bold sudah cukup).
+       */}
+      <p className={`mt-1 truncate text-lg font-bold tabular-nums text-(--color-text) ${accent ? "font-extrabold" : ""}`}>
         {value}
       </p>
       {sub ? <p className="mt-0.5 truncate text-[11px] text-(--color-text-secondary)">{sub}</p> : null}
-    </>
+    </div>
   );
-
-  const base =
-    "rounded-xl bg-white p-4 text-left shadow-sm ring-1 ring-(--color-border)/40 transition-all duration-200 hover:shadow-md dark:bg-(--color-surface) dark:ring-(--color-border)/60";
-
-  if (onPress) {
-    return (
-      <button type="button" onClick={onPress} className={`${base} ${btnPress}`}>
-        {body}
-      </button>
-    );
-  }
-  return <div className={base}>{body}</div>;
 }
