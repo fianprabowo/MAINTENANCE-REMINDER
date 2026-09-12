@@ -40,6 +40,7 @@ import {
 } from "@/lib/supabase";
 import type { AppNotification } from "@/lib/types";
 import { showUnreadNotificationsToast } from "@/components/UnreadNotificationsToast";
+import { useTranslation } from "@/lib/i18n";
 
 type Ctx = {
   unreadCount: number;
@@ -55,6 +56,11 @@ const NotificationsContext = createContext<Ctx | null>(null);
 
 export function NotificationsProvider({ children }: { children: React.ReactNode }) {
   const { user, loading: authLoading } = useAuth();
+  // `t` + `formatNumber` untuk locale-aware notification copy (dilempar
+  // ke `evaluateAndEmitForUser` supaya title + body dalam bahasa user).
+  // TranslateFn di service layer typed loose (`string` key), tapi caller
+  // di sini punya proper `TranslationKey` union — cast implicit di boundary.
+  const { t, formatNumber } = useTranslation();
   const [unreadCount, setUnreadCount] = useState(0);
   const [recent, setRecent] = useState<AppNotification[]>([]);
   const [ready, setReady] = useState(false);
@@ -94,7 +100,13 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
       }
       const p = (async () => {
         try {
-          await evaluateAndEmitForUser();
+          // `t` di service layer typed loose (`string` key). Cast supaya
+          // TS senang meski runtime tidak peduli. `evaluateAndEmitForUser`
+          // hanya pakai key literal yang guaranteed ada di locale files.
+          await evaluateAndEmitForUser(
+            t as (key: string, params?: Record<string, string | number>) => string,
+            formatNumber,
+          );
           markNotificationRunDone();
           await refresh();
         } catch (err) {
@@ -108,7 +120,7 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
         inflightRef.current = null;
       }
     },
-    [user, refresh],
+    [user, refresh, t, formatNumber],
   );
 
   // Bootstrap: run engine once auth is ready, then surface a single

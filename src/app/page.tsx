@@ -3,7 +3,12 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
+import { Spinner } from "@/components/ui";
 
+/**
+ * Root redirect — auth-aware landing. Auth-still-loading state shows shared
+ * Spinner primitive (identical visual across the app instead of ad-hoc SVG).
+ */
 export default function Home() {
   const { user, loading } = useAuth();
   const router = useRouter();
@@ -15,8 +20,8 @@ export default function Home() {
   }, [user, loading, router]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center">
-      <div className="h-6 w-6 animate-spin rounded-full border-2 border-(--color-border) border-t-(--color-primary)" />
+    <div className="flex min-h-screen items-center justify-center bg-(--color-bg)">
+      <Spinner className="h-6 w-6 text-(--color-text-muted)" />
     </div>
   );
 }

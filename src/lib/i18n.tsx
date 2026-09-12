@@ -124,15 +124,31 @@ function lookup(dict: Messages, key: string): string | undefined {
   return typeof cur === "string" ? cur : undefined;
 }
 
-/** Ganti `{placeholder}` dengan nilai dari `vars`. Angka di-toString. */
+/**
+ * Ganti `{placeholder}` dengan nilai dari `vars`.
+ *
+ * Nilai `number` di-format via `Intl.NumberFormat(locale)` sehingga output
+ * mengikuti separator locale user (mis. "12.500" di id, "12,500" di en).
+ * Sebelumnya numbers cuma di-`String()`-kan (raw "12500"), yang
+ * memaksa caller pre-format sendiri dengan hardcoded `.toLocaleString("id-ID")`.
+ * Auto-format di sini bikin semua caller otomatis locale-aware.
+ *
+ * Kalau caller BUTUH raw number (mis. version "1.0.0", ID literal),
+ * kirim sebagai string dari luar.
+ */
 function interpolate(
   template: string,
-  vars?: Record<string, string | number>,
+  vars: Record<string, string | number> | undefined,
+  locale: Locale,
 ): string {
   if (!vars) return template;
   return template.replace(/\{(\w+)\}/g, (_, k: string) => {
     const v = vars[k];
-    return v === undefined || v === null ? `{${k}}` : String(v);
+    if (v === undefined || v === null) return `{${k}}`;
+    if (typeof v === "number") {
+      return new Intl.NumberFormat(BCP47[locale]).format(v);
+    }
+    return v;
   });
 }
 
@@ -190,11 +206,13 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const t = useCallback(
     (key: TranslationKey, vars?: Record<string, string | number>) => {
       // Prioritas: locale aktif → fallback English → return key mentah
-      // agar developer langsung sadar ada key yang hilang.
+      // agar developer langsung sadar ada key yang hilang. `locale`
+      // di-pass ke interpolate supaya numeric vars di-format
+      // locale-aware (via `Intl.NumberFormat`).
       const primary = lookup(MESSAGES[locale], key);
-      if (primary) return interpolate(primary, vars);
+      if (primary) return interpolate(primary, vars, locale);
       const fallback = lookup(MESSAGES.en, key);
-      if (fallback) return interpolate(fallback, vars);
+      if (fallback) return interpolate(fallback, vars, locale);
       if (process.env.NODE_ENV !== "production") {
         // eslint-disable-next-line no-console
         console.warn(`[i18n] Missing translation for "${key}"`);

@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { NotaScanError, scanNotaFromFile } from "@/lib/nota-scan";
 import type { NotaScanResult } from "@/lib/nota-normalize";
+import { Button, SectionLabel } from "@/components/ui";
 import { useTranslation, type TranslationKey } from "@/lib/i18n";
 import { toast } from "sonner";
 
@@ -89,9 +90,7 @@ export default function NotaScanButton({
 
   return (
     <div className={`flex flex-col gap-2 ${className}`}>
-      <p className="text-[10px] font-bold uppercase tracking-wide text-(--color-text-muted)">
-        {t("notaScanButton.label")}
-      </p>
+      <SectionLabel>{t("notaScanButton.label")}</SectionLabel>
       <div className="grid grid-cols-2 gap-2">
         <input
           ref={cameraInputRef}
@@ -110,24 +109,30 @@ export default function NotaScanButton({
           disabled={busy}
           onChange={(e) => void handleFile(e.target.files?.[0])}
         />
-        <button
+        <Button
           type="button"
+          variant="secondary"
+          size="lg"
+          fullWidth
           disabled={busy}
+          loading={loading}
+          leadingIcon={<CameraIcon className="h-5 w-5" />}
           onClick={() => cameraInputRef.current?.click()}
-          className="inline-flex items-center justify-center gap-2 rounded-xl border border-(--color-border) bg-(--color-bg) px-3 py-2.5 text-xs font-bold text-(--color-text) shadow-sm transition-all duration-150 hover:border-(--color-primary)/40 hover:text-(--color-primary) active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
         >
-          <CameraIcon className="h-4 w-4" />
           {loading ? t("notaScanButton.scanning") : t("notaScanButton.camera")}
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
+          variant="secondary"
+          size="lg"
+          fullWidth
           disabled={busy}
+          loading={loading}
+          leadingIcon={<FileIcon className="h-5 w-5" />}
           onClick={() => fileInputRef.current?.click()}
-          className="inline-flex items-center justify-center gap-2 rounded-xl border border-(--color-border) bg-(--color-bg) px-3 py-2.5 text-xs font-bold text-(--color-text) shadow-sm transition-all duration-150 hover:border-(--color-primary)/40 hover:text-(--color-primary) active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
         >
-          <FileIcon className="h-4 w-4" />
           {loading ? t("notaScanButton.scanning") : t("notaScanButton.photoPdf")}
-        </button>
+        </Button>
       </div>
     </div>
   );

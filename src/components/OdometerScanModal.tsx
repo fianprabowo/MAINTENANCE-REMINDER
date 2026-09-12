@@ -15,7 +15,26 @@ import {
 } from "@/lib/odometer-scan";
 import type { OdometerConfidence } from "@/lib/odometer-normalize";
 import { validateOdometerImage, type ValidationResult } from "@/lib/odometer-validate";
+import { Button, IconButton, Spinner } from "@/components/ui";
 import { toast } from "sonner";
+
+function CloseIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+    >
+      <path d="M18 6 6 18M6 6l12 12" />
+    </svg>
+  );
+}
 
 type ViewState = { panX: number; panY: number; scale: number };
 
@@ -389,7 +408,7 @@ export default function OdometerScanFlow({
     <div className="relative rounded-2xl border border-(--color-border) bg-(--color-surface-alt)/40 p-4">
       {isBusy ? (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-2xl bg-(--color-bg)/95 px-4 backdrop-blur-sm">
-          <span className="h-9 w-9 animate-spin rounded-full border-[3px] border-(--color-border) border-t-(--color-primary)" />
+          <Spinner className="h-9 w-9 text-(--color-primary)" />
           <p className="mt-3 text-sm font-bold">{scanMessage}</p>
           <p className="mt-1 text-center text-xs text-(--color-text-muted)">
             {t("odometerScanModal.usuallySeconds")}
@@ -404,13 +423,14 @@ export default function OdometerScanFlow({
           {step === "done" && t("odometerScanModal.compareNumbers")}
         </h3>
         {!isBusy && step !== "done" ? (
-          <button
-            type="button"
+          <IconButton
+            label={t("odometerScanModal.cancel")}
+            size="sm"
             onClick={onClose}
-            className="shrink-0 text-xs font-semibold text-(--color-text-muted) hover:text-(--color-text)"
+            className="-mr-1"
           >
-            {t("odometerScanModal.cancel")}
-          </button>
+            <CloseIcon className="h-4 w-4" />
+          </IconButton>
         ) : null}
       </div>
 
@@ -463,8 +483,8 @@ export default function OdometerScanFlow({
               key={issue.id}
               className={`rounded-lg px-2.5 py-2 text-xs ${
                 issue.level === "error"
-                  ? "bg-red-500/10 text-red-700 dark:text-red-400"
-                  : "bg-amber-500/10 text-amber-800 dark:text-amber-300"
+                  ? "bg-(--color-text) text-(--color-bg) font-bold"
+                  : "bg-(--color-surface-alt) text-(--color-text) font-semibold"
               }`}
             >
               {t(issue.messageKey)}
@@ -481,12 +501,17 @@ export default function OdometerScanFlow({
               {formatNumber(parseInt(detectedKm, 10))} km
             </span>
           </p>
+          {/*
+            Confidence banner (grayscale mode) — sebelumnya red (low) / amber
+            (medium) / muted (high). Sekarang encode via font-weight:
+            low = bold text-color-text, medium = normal text, high = muted.
+          */}
           {confidence === "low" ? (
-            <p className="text-xs text-red-700 dark:text-red-400">
+            <p className="text-xs font-bold text-(--color-text)">
               {t("odometerScanModal.lowConfidenceCheck")}
             </p>
           ) : confidence === "medium" ? (
-            <p className="text-xs text-amber-700 dark:text-amber-400">
+            <p className="text-xs text-(--color-text)">
               {t("odometerScanModal.mediumConfidenceCheck")}
             </p>
           ) : (
@@ -501,70 +526,85 @@ export default function OdometerScanFlow({
         {step === "validation_failed" ? (
           <>
             <div className="flex gap-2">
-              <button
+              <Button
                 type="button"
+                variant="secondary"
+                size="sm"
+                className="min-h-0 flex-1 rounded-xl px-3 py-2.5 text-xs"
                 onClick={() => {
                   viewInitRef.current = false;
                   setStep("crop");
                 }}
-                className="flex-1 rounded-xl border border-(--color-border) py-2.5 text-xs font-semibold"
               >
                 {t("odometerScanModal.adjustPhotoBtn")}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant="primary"
+                size="sm"
+                className="min-h-0 flex-[1.4] rounded-xl px-3 py-2.5 text-xs"
                 onClick={() => onRetake("camera")}
-                className="flex-[1.4] rounded-xl bg-(--color-primary) py-2.5 text-xs font-bold text-white"
               >
                 {t("odometerScanModal.retakePhoto")}
-              </button>
+              </Button>
             </div>
-            <button
+            <Button
               type="button"
+              variant="secondary"
+              size="sm"
+              fullWidth
+              className="min-h-0 rounded-xl border-dashed py-2 text-xs text-(--color-text-secondary)"
               onClick={() => onRetake("gallery")}
-              className="rounded-xl border border-dashed border-(--color-border) py-2 text-xs font-semibold text-(--color-text-secondary)"
             >
               {t("odometerScanModal.pickFromGallery")}
-            </button>
+            </Button>
           </>
         ) : step === "done" ? (
           <div className="flex gap-2">
-            <button
+            <Button
               type="button"
+              variant="secondary"
+              size="sm"
+              className="min-h-0 flex-1 rounded-xl px-3 py-2.5 text-xs"
               onClick={() => {
                 viewInitRef.current = false;
                 setStep("crop");
               }}
-              className="flex-1 rounded-xl border border-(--color-border) py-2.5 text-xs font-semibold"
             >
               {t("odometerScanModal.rescan")}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="primary"
+              size="sm"
+              className="min-h-0 flex-[1.4] rounded-xl px-3 py-2.5 text-xs"
               onClick={onClose}
-              className="flex-[1.4] rounded-xl bg-(--color-primary) py-2.5 text-xs font-bold text-white"
             >
               {t("odometerScanModal.close")}
-            </button>
+            </Button>
           </div>
         ) : (
           <div className="flex gap-2">
-            <button
+            <Button
               type="button"
+              variant="secondary"
+              size="sm"
               disabled={isBusy}
+              className="min-h-0 flex-1 rounded-xl px-3 py-2.5 text-xs"
               onClick={onClose}
-              className="flex-1 rounded-xl border border-(--color-border) py-2.5 text-xs font-semibold disabled:opacity-50"
             >
               {t("odometerScanModal.cancel")}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="primary"
+              size="sm"
               disabled={isBusy}
+              className="min-h-0 flex-[1.4] rounded-xl px-3 py-2.5 text-xs"
               onClick={() => void runScan()}
-              className="flex-[1.4] rounded-xl bg-(--color-primary) py-2.5 text-xs font-bold text-white disabled:opacity-60"
             >
               {t("odometerScanModal.readDigits")}
-            </button>
+            </Button>
           </div>
         )}
       </div>

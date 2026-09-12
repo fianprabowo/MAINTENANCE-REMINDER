@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { Button, IconButton, Modal, SectionLabel, Spinner } from "@/components/ui";
 import { useTranslation } from "@/lib/i18n";
 
 export type ServiceNotaPhase = "idle" | "processing" | "success" | "error" | "empty";
@@ -21,6 +21,14 @@ type ServiceNotaHeroProps = {
   onClearFile: () => void;
   onRetry?: () => void;
 };
+
+function CloseIcon({ className }: { className?: string }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className} aria-hidden>
+      <path d="M18 6 6 18M6 6l12 12" />
+    </svg>
+  );
+}
 
 function CameraIcon({ className }: { className?: string }) {
   return (
@@ -75,11 +83,6 @@ export default function ServiceNotaHero({
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   /** Tutup popup saat OCR mulai / selesai sukses. */
   useEffect(() => {
@@ -87,20 +90,6 @@ export default function ServiceNotaHero({
       setPickerOpen(false);
     }
   }, [phase]);
-
-  useEffect(() => {
-    if (!pickerOpen) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setPickerOpen(false);
-    };
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.body.style.overflow = prev;
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [pickerOpen]);
 
   const pick = (file: File | undefined) => {
     if (!file || disabled) return;
@@ -140,85 +129,72 @@ export default function ServiceNotaHero({
     </>
   );
 
-  const pickerPopup =
-    mounted && pickerOpen
-      ? createPortal(
-          <div
-            className="fixed inset-0 z-[80] flex items-end justify-center sm:items-center"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="nota-upload-title"
-          >
-            <button
-              type="button"
-              className="absolute inset-0 bg-black/45"
-              aria-label={t("common.close")}
-              onClick={() => setPickerOpen(false)}
-            />
-            <div className="relative z-10 w-full max-w-md rounded-t-3xl bg-(--color-bg) p-5 pb-[max(1.25rem,calc(env(safe-area-inset-bottom,0px)+1rem))] shadow-2xl sm:mx-4 sm:rounded-3xl">
-              <div className="mb-1 flex justify-center sm:hidden" aria-hidden>
-                <div className="h-1 w-10 rounded-full bg-(--color-border)" />
-              </div>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 id="nota-upload-title" className="text-lg font-extrabold text-(--color-text)">
-                    {t("serviceNotaHero.uploadTitle")}
-                  </h3>
-                  <p className="mt-1 text-xs leading-relaxed text-(--color-text-secondary)">
-                    {t("serviceNotaHero.uploadSubtitle")}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setPickerOpen(false)}
-                  className="-mr-1 -mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-(--color-text-muted) hover:bg-(--color-surface) hover:text-(--color-text)"
-                  aria-label={t("common.close")}
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5" aria-hidden>
-                    <path d="M18 6 6 18M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              <div className="mt-5 flex flex-col items-center rounded-2xl border-2 border-dashed border-(--color-primary)/40 bg-(--color-primary-soft)/30 px-4 py-8 text-center">
-                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-(--color-primary) text-white shadow-lg shadow-(--color-primary)/30">
-                  <FileIcon className="h-8 w-8" />
-                </div>
-                <p className="text-sm font-bold text-(--color-text)">{t("serviceNotaHero.pickSource")}</p>
-                <p className="mt-1 text-[11px] text-(--color-text-secondary)">
-                  {t("serviceNotaHero.pickSourceHint")}
-                </p>
-                <div className="mt-5 grid w-full max-w-xs grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => cameraInputRef.current?.click()}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-(--color-primary) px-3 py-3.5 text-xs font-bold text-white shadow-md shadow-(--color-primary)/25 transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-50"
-                  >
-                    <CameraIcon className="h-4 w-4" />
-                    {t("serviceNotaHero.camera")}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => fileInputRef.current?.click()}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-(--color-border) bg-(--color-bg) px-3 py-3.5 text-xs font-bold text-(--color-text) transition-all hover:border-(--color-primary)/40 hover:text-(--color-primary) active:scale-[0.98] disabled:opacity-50"
-                  >
-                    <FileIcon className="h-4 w-4" />
-                    {t("serviceNotaHero.photoPdf")}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>,
-          document.body,
-        )
-      : null;
-
   return (
     <section className="shrink-0">
       {fileInputs}
-      {pickerPopup}
+
+      <Modal
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        variant="sheet"
+        ariaLabelledBy="nota-upload-title"
+        dismissible={!busy}
+        maxWidthClass="max-w-md"
+        contentClassName="p-5 pb-[max(1.25rem,calc(env(safe-area-inset-bottom,0px)+1rem))]"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 id="nota-upload-title" className="text-lg font-extrabold text-(--color-text)">
+              {t("serviceNotaHero.uploadTitle")}
+            </h3>
+            <p className="mt-1 text-xs leading-relaxed text-(--color-text-secondary)">
+              {t("serviceNotaHero.uploadSubtitle")}
+            </p>
+          </div>
+          <IconButton
+            label={t("common.close")}
+            onClick={() => setPickerOpen(false)}
+            disabled={busy}
+            className="-mr-1 -mt-1"
+          >
+            <CloseIcon className="h-5 w-5" />
+          </IconButton>
+        </div>
+
+        <div className="mt-5 flex flex-col items-center rounded-2xl border-2 border-dashed border-(--color-primary)/40 bg-(--color-primary-soft)/30 px-4 py-8 text-center">
+          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-(--color-primary) text-(--color-bg) shadow-lg shadow-(--color-primary)/30">
+            <FileIcon className="h-8 w-8" />
+          </div>
+          <p className="text-sm font-bold text-(--color-text)">{t("serviceNotaHero.pickSource")}</p>
+          <p className="mt-1 text-[11px] text-(--color-text-secondary)">
+            {t("serviceNotaHero.pickSourceHint")}
+          </p>
+          <div className="mt-5 grid w-full max-w-xs grid-cols-2 gap-2">
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              fullWidth
+              disabled={busy}
+              leadingIcon={<CameraIcon className="h-4 w-4" />}
+              onClick={() => cameraInputRef.current?.click()}
+            >
+              {t("serviceNotaHero.camera")}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              fullWidth
+              disabled={busy}
+              leadingIcon={<FileIcon className="h-4 w-4" />}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {t("serviceNotaHero.photoPdf")}
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       {phase === "processing" ? (
         <div
@@ -227,10 +203,7 @@ export default function ServiceNotaHero({
           aria-busy="true"
         >
           <div className="flex items-center gap-3">
-            <div
-              className="h-10 w-10 shrink-0 animate-spin rounded-full border-2 border-(--color-border) border-t-(--color-primary)"
-              aria-hidden
-            />
+            <Spinner className="h-10 w-10 shrink-0 text-(--color-primary)" />
             <div className="min-w-0">
               <p className="text-sm font-bold text-(--color-text)">{t("serviceNotaHero.processing")}</p>
               <p className="truncate text-xs text-(--color-text-secondary)">
@@ -263,22 +236,22 @@ export default function ServiceNotaHero({
               </p>
               <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-(--color-text-secondary)">
                 {detectedDateLabel ? (
-                  <span>
-                    {t("serviceNotaHero.dateLabel")}{" "}
+                  <span className="inline-flex flex-wrap items-baseline gap-x-1">
+                    <SectionLabel as="span">{t("serviceNotaHero.dateLabel")}</SectionLabel>
                     <span className="font-semibold text-(--color-text)">{detectedDateLabel}</span>
                   </span>
                 ) : null}
                 {detectedKmLabel ? (
-                  <span>
-                    {t("serviceNotaHero.kmLabel")}{" "}
+                  <span className="inline-flex flex-wrap items-baseline gap-x-1">
+                    <SectionLabel as="span">{t("serviceNotaHero.kmLabel")}</SectionLabel>
                     <span className="font-semibold tabular-nums text-(--color-text)">
                       {detectedKmLabel}
                     </span>
                   </span>
                 ) : null}
                 {estimatedTotalLabel ? (
-                  <span>
-                    {t("serviceNotaHero.estLabel")}{" "}
+                  <span className="inline-flex flex-wrap items-baseline gap-x-1">
+                    <SectionLabel as="span">{t("serviceNotaHero.estLabel")}</SectionLabel>
                     <span className="font-semibold tabular-nums text-(--color-primary)">
                       {estimatedTotalLabel}
                     </span>
@@ -287,42 +260,51 @@ export default function ServiceNotaHero({
               </div>
             </div>
           </div>
-          <button
+          <Button
             type="button"
+            variant="secondary"
+            size="sm"
+            fullWidth
             disabled={busy}
             onClick={openPicker}
-            className="w-full rounded-xl border border-(--color-border) bg-(--color-bg) py-2.5 text-xs font-bold text-(--color-text) transition-all hover:border-(--color-primary)/40 hover:text-(--color-primary) active:scale-[0.99] disabled:opacity-50"
           >
             {t("serviceNotaHero.replaceFile")}
-          </button>
+          </Button>
         </div>
       ) : null}
 
       {(phase === "error" || phase === "empty") && (
         <div className="space-y-3 rounded-2xl bg-(--color-surface) p-4 shadow-sm ring-1 ring-(--color-border)/40">
-          <div className="rounded-xl bg-red-50 px-3 py-3 dark:bg-red-950/25">
-            <p className="text-sm font-bold text-red-600 dark:text-red-400">
+          {/*
+            Error / empty callout — grayscale mode: neutral inverted bg untuk
+            "loud" tone (previously red-50 / red-950). Text-secondary di sub
+            supaya body tidak terlalu heavy.
+          */}
+          <div className="rounded-xl bg-(--color-text) px-3 py-3">
+            <p className="text-sm font-bold text-(--color-bg)">
               {phase === "empty" ? t("serviceNotaHero.emptyTitle") : t("serviceNotaHero.errorTitle")}
             </p>
-            <p className="mt-1 text-xs leading-relaxed text-red-600/80 dark:text-red-300/80">
+            <p className="mt-1 text-xs leading-relaxed text-(--color-bg)/80">
               {errorMessage ??
                 (phase === "empty"
                   ? t("serviceNotaHero.emptyDefault")
                   : t("serviceNotaHero.errorDefault"))}
             </p>
           </div>
-          <button
+          <Button
             type="button"
+            variant="primary"
+            size="sm"
+            fullWidth
             disabled={busy}
             onClick={() => {
               onClearFile();
               onRetry?.();
               openPicker();
             }}
-            className="w-full rounded-xl bg-(--color-primary) py-2.5 text-xs font-bold text-white shadow-md shadow-(--color-primary)/25 active:scale-[0.99] disabled:opacity-50"
           >
             {t("serviceNotaHero.retryUpload")}
-          </button>
+          </Button>
         </div>
       )}
 
@@ -335,7 +317,7 @@ export default function ServiceNotaHero({
             className="group flex w-full items-center gap-3 rounded-2xl border border-dashed border-(--color-primary)/40 bg-(--color-primary-soft)/25 px-3 py-3 text-left transition-all hover:border-(--color-primary)/60 hover:bg-(--color-primary-soft)/45 active:scale-[0.99] disabled:opacity-50"
             aria-label={t("serviceNotaHero.scanAria")}
           >
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-(--color-primary) text-white shadow-md shadow-(--color-primary)/30 transition-transform group-hover:scale-105">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-(--color-primary) text-(--color-bg) shadow-md shadow-(--color-primary)/30 transition-transform group-hover:scale-105">
               <PlusIcon className="h-6 w-6" />
             </span>
             <span className="min-w-0 flex-1">

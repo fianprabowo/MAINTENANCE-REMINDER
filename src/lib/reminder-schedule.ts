@@ -123,48 +123,13 @@ function clampMonthDay(year: number, month: number, day: number, hour = 0): Date
 
 /* ──────────────────────────────────────────────────────────────────
  * Display helpers
- * ──────────────────────────────────────────────────────────────── */
-
-const ID_DATE_FMT: Intl.DateTimeFormatOptions = {
-  day: "numeric",
-  month: "long",
-  year: "numeric",
-};
-
-/**
- * Human-readable description of a schedule. Used both for the form preview
- * and as a fallback subtitle on list cards.
  *
- * Returns short fragments like "setiap Senin, Rabu" — suitable for joining
- * with a km clause via " + " / "atau".
- */
-export function formatScheduleSummary(spec: ScheduleSpec | null): string {
-  if (!spec) return "";
-
-  switch (spec.kind) {
-    case "once": {
-      const d = new Date(spec.once_at);
-      if (Number.isNaN(d.getTime())) return "Pilih tanggal";
-      return `Pada ${d.toLocaleDateString("id-ID", ID_DATE_FMT)}`;
-    }
-
-    case "daily":
-      return "setiap hari";
-
-    case "weekly": {
-      const sorted = sortWeekdaysForDisplay(spec.weekdays);
-      if (sorted.length === 0) return "Pilih hari";
-      const labels = sorted
-        .map((d) => WEEKDAYS.find((w) => w.value === d)?.long)
-        .filter(Boolean);
-      return `setiap ${labels.join(", ")}`;
-    }
-
-    case "monthly":
-      if (!spec.day_of_month) return "Pilih tanggal bulan";
-      return `setiap tanggal ${spec.day_of_month}`;
-  }
-}
+ * Note: `formatScheduleSummary` sebelumnya di sini pernah men-render
+ * summary schedule dengan hardcoded Bahasa Indonesia. Sekarang digantikan
+ * oleh `useFormatScheduleSummary()` di `reminder-schedule-i18n.tsx` yang
+ * pakai `useTranslation()` supaya locale-aware. File ini sengaja tetap
+ * pure (no React deps) untuk kompatibilitas server-side utilities.
+ * ──────────────────────────────────────────────────────────────── */
 
 /**
  * Reconstruct a `ScheduleSpec` from raw DB columns. Returns `null` when

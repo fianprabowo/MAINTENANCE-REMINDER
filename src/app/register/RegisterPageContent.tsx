@@ -5,15 +5,82 @@
  * Disimpan agar bisa dipakai lagi nanti.
  */
 import { useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 import { useTranslation } from "@/lib/i18n";
+import { Button, IconButton, SectionLabel, TextInput } from "@/components/ui";
 
 function FieldError({ message }: { message?: string }) {
   if (!message) return null;
-  return <p className="mb-1 text-xs font-medium text-red-400">{message}</p>;
+  return (
+    <p className="mb-1 px-2 text-xs font-bold text-(--color-text)">
+      {message}
+    </p>
+  );
+}
+
+function KeyIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <circle cx="8" cy="15" r="4" />
+      <path d="m10.85 12.15 7.15-7.15" />
+      <path d="M18 5l3 3" />
+      <path d="M16 7l3 3" />
+    </svg>
+  );
+}
+
+function EyeIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function EyeOffIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
+      <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
+      <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
+      <line x1="2" y1="2" x2="22" y2="22" />
+    </svg>
+  );
 }
 
 export default function RegisterPageContent() {
@@ -22,6 +89,8 @@ export default function RegisterPageContent() {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
@@ -108,115 +177,177 @@ export default function RegisterPageContent() {
     }
   };
 
-  const inputClass =
-    "w-full rounded-2xl border px-4 py-3.5 text-sm outline-none transition-colors placeholder:text-(--color-text-muted) focus:border-(--color-primary) focus:ring-2 focus:ring-(--color-primary)/20";
-
-  const borderFor = (field: string) =>
-    errors[field] && touched[field] ? "border-red-300 dark:border-red-800/60" : "border-(--color-border)";
+  const fieldError = (field: string) => Boolean(touched[field] && errors[field]);
 
   return (
-    <div className="flex min-h-screen flex-col justify-between px-6 py-12">
-      <div />
+    <main className="flex min-h-screen flex-col justify-center bg-(--color-bg) px-6 py-12">
+      <div className="mx-auto w-full max-w-sm">
+        <div className="mb-10 flex flex-col items-center text-center">
+          <h1 className="sr-only">{t("login.brandTitle")}</h1>
+          <Image
+            src="/brand/risma-logo.png"
+            alt={t("login.brandTitle")}
+            width={1024}
+            height={682}
+            className="mb-4 h-auto w-48 dark:invert"
+            priority
+          />
+          <SectionLabel className="text-balance">{t("login.brandFullName")}</SectionLabel>
+        </div>
 
-      <div>
-        <div className="mb-10 text-center">
-          <div className="mb-4 text-5xl">🏍️</div>
-          <h1 className="text-2xl font-bold uppercase tracking-wide">
+        <div className="mb-8 text-center">
+          <h2 className="text-2xl font-bold uppercase tracking-wide">
             {t("register.title")}
-          </h1>
+          </h2>
           <p className="mt-2 text-sm text-(--color-text-secondary)">
             {t("register.subtitle")}
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} noValidate className="space-y-3">
+        <form onSubmit={handleSubmit} noValidate className="space-y-4">
           <div>
             <FieldError message={touched.name ? errors.name : undefined} />
-            <input
+            <TextInput
               type="text"
               value={name}
-              onChange={(e) => { setName(e.target.value); if (touched.name) setErrors((p) => ({ ...p, name: validateName(e.target.value) })); }}
+              onChange={(e) => {
+                setName(e.target.value);
+                if (touched.name) setErrors((p) => ({ ...p, name: validateName(e.target.value) }));
+              }}
               onBlur={() => handleBlur("name")}
-              className={`${inputClass} ${borderFor("name")}`}
               placeholder={t("register.namePlaceholderShort")}
+              disabled={loading}
+              error={fieldError("name")}
             />
           </div>
 
           <div>
             <FieldError message={touched.email ? errors.email : undefined} />
-            <input
+            <TextInput
               type="email"
               value={email}
-              onChange={(e) => { setEmail(e.target.value); if (touched.email) setErrors((p) => ({ ...p, email: validateEmail(e.target.value) })); }}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                if (touched.email) setErrors((p) => ({ ...p, email: validateEmail(e.target.value) }));
+              }}
               onBlur={() => handleBlur("email")}
-              className={`${inputClass} ${borderFor("email")}`}
               placeholder={t("register.emailPlaceholderShort")}
+              disabled={loading}
+              error={fieldError("email")}
             />
           </div>
 
           <div>
             <FieldError message={touched.phone ? errors.phone : undefined} />
-            <div className={`flex items-center overflow-hidden rounded-2xl border ${borderFor("phone")} transition-colors focus-within:border-(--color-primary) focus-within:ring-2 focus-within:ring-(--color-primary)/20`}>
-              <span className="shrink-0 bg-(--color-surface-alt) px-3.5 py-3.5 text-sm font-medium text-(--color-text-secondary)">
-                +62
-              </span>
-              <input
-                type="tel"
-                value={phone}
-                onChange={(e) => {
-                  const v = e.target.value.replace(/\D/g, "");
-                  setPhone(v);
-                  if (touched.phone) setErrors((p) => ({ ...p, phone: validatePhone(v) }));
-                }}
-                onBlur={() => handleBlur("phone")}
-                className="w-full border-none bg-transparent px-3 py-3.5 text-sm outline-none placeholder:text-(--color-text-muted)"
-                placeholder={t("register.phonePlaceholderShort")}
-                maxLength={13}
-                inputMode="numeric"
-              />
-            </div>
+            <TextInput
+              type="tel"
+              value={phone}
+              onChange={(e) => {
+                const v = e.target.value.replace(/\D/g, "");
+                setPhone(v);
+                if (touched.phone) setErrors((p) => ({ ...p, phone: validatePhone(v) }));
+              }}
+              onBlur={() => handleBlur("phone")}
+              placeholder={t("register.phonePlaceholderShort")}
+              maxLength={13}
+              inputMode="numeric"
+              disabled={loading}
+              error={fieldError("phone")}
+              leadingIcon={
+                <span className="text-sm font-semibold text-(--color-text-secondary)">+62</span>
+              }
+            />
           </div>
 
           <div>
             <FieldError message={touched.password ? errors.password : undefined} />
-            <input
-              type="password"
+            <TextInput
+              type={showPassword ? "text" : "password"}
               value={password}
-              onChange={(e) => { setPassword(e.target.value); if (touched.password) setErrors((p) => ({ ...p, password: validatePassword(e.target.value) })); }}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                if (touched.password) {
+                  setErrors((p) => ({ ...p, password: validatePassword(e.target.value) }));
+                }
+              }}
               onBlur={() => handleBlur("password")}
-              className={`${inputClass} ${borderFor("password")}`}
               placeholder={t("register.passwordPlaceholderShort")}
+              disabled={loading}
+              error={fieldError("password")}
+              leadingIcon={<KeyIcon className="h-5 w-5" />}
+              trailingSlot={
+                <IconButton
+                  label={showPassword ? t("login.hideCode") : t("login.showCode")}
+                  tabIndex={-1}
+                  onClick={() => setShowPassword((v) => !v)}
+                >
+                  {showPassword ? (
+                    <EyeOffIcon className="h-5 w-5" />
+                  ) : (
+                    <EyeIcon className="h-5 w-5" />
+                  )}
+                </IconButton>
+              }
             />
           </div>
 
           <div>
             <FieldError message={touched.confirmPassword ? errors.confirmPassword : undefined} />
-            <input
-              type="password"
+            <TextInput
+              type={showConfirmPassword ? "text" : "password"}
               value={confirmPassword}
-              onChange={(e) => { setConfirmPassword(e.target.value); if (touched.confirmPassword) setErrors((p) => ({ ...p, confirmPassword: validateConfirm(password, e.target.value) })); }}
+              onChange={(e) => {
+                setConfirmPassword(e.target.value);
+                if (touched.confirmPassword) {
+                  setErrors((p) => ({
+                    ...p,
+                    confirmPassword: validateConfirm(password, e.target.value),
+                  }));
+                }
+              }}
               onBlur={() => handleBlur("confirmPassword")}
-              className={`${inputClass} ${borderFor("confirmPassword")}`}
               placeholder={t("register.confirmPasswordPlaceholderShort")}
+              disabled={loading}
+              error={fieldError("confirmPassword")}
+              leadingIcon={<KeyIcon className="h-5 w-5" />}
+              trailingSlot={
+                <IconButton
+                  label={showConfirmPassword ? t("login.hideCode") : t("login.showCode")}
+                  tabIndex={-1}
+                  onClick={() => setShowConfirmPassword((v) => !v)}
+                >
+                  {showConfirmPassword ? (
+                    <EyeOffIcon className="h-5 w-5" />
+                  ) : (
+                    <EyeIcon className="h-5 w-5" />
+                  )}
+                </IconButton>
+              }
             />
           </div>
 
-          <button
+          <Button
             type="submit"
-            disabled={loading}
-            className="w-full rounded-2xl bg-(--color-primary) px-4 py-4 text-base font-bold text-white shadow-lg shadow-(--color-primary)/30 transition-all hover:brightness-110 active:scale-[0.98] active:brightness-90 disabled:opacity-50"
+            variant="primary"
+            size="lg"
+            fullWidth
+            loading={loading}
+            className="mt-2 font-bold uppercase tracking-[0.15em]"
           >
             {loading ? t("register.submittingLabel") : t("register.submitLabel")}
-          </button>
+          </Button>
         </form>
-      </div>
 
-      <p className="text-center text-xs text-(--color-text-muted)">
-        {t("register.hasAccount")}{" "}
-        <Link href="/login" className="font-semibold text-(--color-primary)">
-          {t("register.signIn")}
-        </Link>
-      </p>
-    </div>
+        <p className="mt-10 text-center text-xs text-(--color-text-muted)">
+          {t("register.hasAccount")}{" "}
+          <Link
+            href="/login"
+            className="font-semibold text-(--color-text) transition-colors hover:underline"
+          >
+            {t("register.signIn")}
+          </Link>
+        </p>
+      </div>
+    </main>
   );
 }

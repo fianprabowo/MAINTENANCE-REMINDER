@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { prepareOdometerScan, type OdometerScanPreview } from "@/lib/odometer-image";
 import OdometerScanFlow from "@/components/OdometerScanModal";
+import { Button, IconButton, Spinner } from "@/components/ui";
 import { useTranslation } from "@/lib/i18n";
 import { toast } from "sonner";
 
@@ -145,36 +146,30 @@ export default function OdometerScanButton({
       <>
         {fileInputs}
         <div className={`grid grid-cols-2 gap-2 ${className}`}>
-          <button
+          <Button
             type="button"
+            variant="secondary"
+            size="lg"
+            fullWidth
             disabled={isDisabled}
+            loading={loading}
+            leadingIcon={<CameraIcon className="h-5 w-5" />}
             onClick={() => cameraInputRef.current?.click()}
-            className="flex items-center justify-center gap-2 rounded-2xl border border-dashed border-(--color-border) bg-(--color-surface-alt)/60 px-4 py-3 text-sm font-semibold text-(--color-text-secondary) transition-all hover:border-(--color-primary)/50 hover:bg-(--color-primary-soft)/40 hover:text-(--color-primary) active:scale-[0.99] disabled:opacity-50"
           >
-            {loading ? (
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-(--color-border) border-t-(--color-primary)" />
-            ) : (
-              <>
-                <CameraIcon className="h-5 w-5" />
-                <span>{t("odometerScanButton.camera")}</span>
-              </>
-            )}
-          </button>
-          <button
+            {t("odometerScanButton.camera")}
+          </Button>
+          <Button
             type="button"
+            variant="secondary"
+            size="lg"
+            fullWidth
             disabled={isDisabled}
+            loading={loading}
+            leadingIcon={<GalleryIcon className="h-5 w-5" />}
             onClick={() => galleryInputRef.current?.click()}
-            className="flex items-center justify-center gap-2 rounded-2xl border border-dashed border-(--color-border) bg-(--color-surface-alt)/60 px-4 py-3 text-sm font-semibold text-(--color-text-secondary) transition-all hover:border-(--color-primary)/50 hover:bg-(--color-primary-soft)/40 hover:text-(--color-primary) active:scale-[0.99] disabled:opacity-50"
           >
-            {loading ? (
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-(--color-border) border-t-(--color-primary)" />
-            ) : (
-              <>
-                <GalleryIcon className="h-5 w-5" />
-                <span>{t("odometerScanButton.gallery")}</span>
-              </>
-            )}
-          </button>
+            {t("odometerScanButton.gallery")}
+          </Button>
         </div>
       </>
     );
@@ -184,28 +179,34 @@ export default function OdometerScanButton({
     <>
       {fileInputs}
       <div className={`flex gap-1 ${className}`}>
-        <button
+        <IconButton
           type="button"
+          label={
+            loading
+              ? t("odometerScanButton.loadingPhoto")
+              : t("odometerScanButton.scanCameraAria")
+          }
+          variant="solid"
+          size="lg"
           disabled={isDisabled}
-          aria-label={loading ? t("odometerScanButton.loadingPhoto") : t("odometerScanButton.scanCameraAria")}
           onClick={() => cameraInputRef.current?.click()}
-          className="flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-2xl border border-(--color-border) bg-(--color-surface) text-(--color-text-secondary) transition-all hover:border-(--color-primary)/40 hover:text-(--color-primary) active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {loading ? (
-            <span className="h-4 w-4 animate-spin rounded-full border-2 border-(--color-border) border-t-(--color-primary)" />
+            <Spinner className="h-5 w-5" />
           ) : (
             <CameraIcon className="h-5 w-5" />
           )}
-        </button>
-        <button
+        </IconButton>
+        <IconButton
           type="button"
+          label={t("odometerScanButton.scanGalleryAria")}
+          variant="solid"
+          size="lg"
           disabled={isDisabled}
-          aria-label={t("odometerScanButton.scanGalleryAria")}
           onClick={() => galleryInputRef.current?.click()}
-          className="flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-2xl border border-(--color-border) bg-(--color-surface) text-(--color-text-secondary) transition-all hover:border-(--color-primary)/40 hover:text-(--color-primary) active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <GalleryIcon className="h-5 w-5" />
-        </button>
+        </IconButton>
       </div>
     </>
   );

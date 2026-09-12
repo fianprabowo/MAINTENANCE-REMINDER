@@ -191,9 +191,9 @@ export default function BottomNav() {
           }`}
         >
           <span
-            className={`flex h-9 w-9 items-center justify-center rounded-full text-white shadow-md transition-all sm:h-10 sm:w-10 ${
+            className={`flex h-9 w-9 items-center justify-center rounded-full text-(--color-bg) shadow-md transition-all sm:h-10 sm:w-10 ${
               mileageModalOpen
-                ? "bg-(--color-primary) shadow-(--color-primary)/25 ring-2 ring-white/40"
+                ? "bg-(--color-primary) shadow-(--color-primary)/25 ring-2 ring-(--color-bg)/40"
                 : "bg-(--color-primary) shadow-(--color-primary)/20 hover:brightness-110 active:scale-95"
             }`}
           >

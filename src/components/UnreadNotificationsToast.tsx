@@ -42,17 +42,19 @@ function pickTone(latest: AppNotification | null, totalUnread: number): Tone {
   // calmer side — we'd rather under-alert than make users dread the toast.
   const urgent =
     latest?.kind === "reminder_terlewat" || totalUnread >= 3;
+  // Grayscale toast tone — urgency di-encode via opacity + bar weight
+  // (urgent = full text, calm = 60% text). Halo pakai text opacity gradient.
   if (urgent) {
     return {
-      bar: "bg-gradient-to-b from-red-500 via-red-500 to-red-600",
-      iconWrap: "bg-red-100 text-red-600 dark:bg-red-950/40 dark:text-red-300",
-      halo: "from-red-400/40 via-red-400/10 to-transparent",
+      bar: "bg-gradient-to-b from-(--color-text) via-(--color-text) to-(--color-text)",
+      iconWrap: "bg-(--color-text) text-(--color-bg)",
+      halo: "from-(--color-text)/25 via-(--color-text)/8 to-transparent",
     };
   }
   return {
-    bar: "bg-gradient-to-b from-amber-400 via-amber-500 to-amber-500",
-    iconWrap: "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
-    halo: "from-amber-400/40 via-amber-400/10 to-transparent",
+    bar: "bg-gradient-to-b from-(--color-text)/60 via-(--color-text)/60 to-(--color-text)/60",
+    iconWrap: "bg-(--color-surface-alt) text-(--color-text)",
+    halo: "from-(--color-text)/15 via-(--color-text)/6 to-transparent",
   };
 }
 

@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
+import { Button, SectionLabel, TextInput } from "@/components/ui";
 import type { MotorSizeClass } from "@/lib/motor-fuel-calc";
 import { recordVehicleFuelFill } from "@/lib/supabase";
 import { useAppErrorMessage, useTranslation } from "@/lib/i18n";
@@ -32,21 +33,6 @@ function localYmdToIso(ymd: string): string {
   }
   return new Date(y, mo - 1, day, 12, 0, 0, 0).toISOString();
 }
-
-/* ──────────────────────────────────────────────────────────────────
- * Style tokens — netral; warna dipakai hanya untuk primary CTA
- * ──────────────────────────────────────────────────────────────── */
-
-const PRIMARY_BTN =
-  "inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-(--color-primary) px-4 py-3.5 text-sm font-bold text-white shadow-md shadow-(--color-primary)/30 transition-all duration-200 hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100";
-
-const SECONDARY_BTN =
-  "inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-(--color-border) bg-(--color-surface) px-4 py-3 text-sm font-semibold text-(--color-text) transition-all duration-200 hover:bg-(--color-surface-alt) active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100";
-
-const INPUT =
-  "w-full rounded-xl border border-(--color-border) bg-(--color-surface) px-3 py-2.5 text-sm tabular-nums outline-none transition-colors duration-150 focus:border-(--color-primary) focus:ring-2 focus:ring-(--color-primary)/20";
-
-const LABEL = "text-[10px] font-bold uppercase tracking-wide text-(--color-text-muted)";
 
 /* ──────────────────────────────────────────────────────────────────
  * Component
@@ -157,7 +143,7 @@ export default function MotorFuelEstimator({
   return (
     <div className="rounded-xl border border-(--color-border)/60 bg-(--color-surface) p-4 shadow-sm">
       {/* Title — tanpa paragraf panjang */}
-      <p className={LABEL}>{t("motorFuelEstimator.title")}</p>
+      <SectionLabel>{t("motorFuelEstimator.title")}</SectionLabel>
       <p className="mt-1 text-xs text-(--color-text-secondary)">
         {t("motorFuelEstimator.subtitle")}
       </p>
@@ -165,17 +151,13 @@ export default function MotorFuelEstimator({
       {/* ── Ringkasan compact — single mini-card, hanya 2 metrik ── */}
       <dl className="mt-4 grid grid-cols-2 gap-3 rounded-xl bg-(--color-surface-alt)/60 p-3 text-sm">
         <div>
-          <dt className="text-[10px] font-semibold uppercase tracking-wide text-(--color-text-muted)">
-            {t("motorFuelEstimator.currentKm")}
-          </dt>
+          <SectionLabel as="dt">{t("motorFuelEstimator.currentKm")}</SectionLabel>
           <dd className="mt-0.5 font-bold tabular-nums text-(--color-text)">
             {formatKm(latestKm)}
           </dd>
         </div>
         <div>
-          <dt className="text-[10px] font-semibold uppercase tracking-wide text-(--color-text-muted)">
-            {t("motorFuelEstimator.lastFill")}
-          </dt>
+          <SectionLabel as="dt">{t("motorFuelEstimator.lastFill")}</SectionLabel>
           <dd className="mt-0.5 font-bold tabular-nums text-(--color-text)">
             {formatKm(lastFuelFillMileage)}
           </dd>
@@ -193,21 +175,24 @@ export default function MotorFuelEstimator({
         </button>
       ) : null}
       {odometerAheadOfFill ? (
-        <p className="mt-3 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+        <p className="mt-3 text-[11px] font-bold text-(--color-text)">
           {t("motorFuelEstimator.odometerWarning")}
         </p>
       ) : null}
 
       {/* ── Quick Action — fokus utama, satu tombol primary ───── */}
       <div className="mt-4">
-        <button
+        <Button
           type="button"
-          onClick={() => void handleFillNow()}
+          variant="primary"
+          size="lg"
+          fullWidth
+          loading={fillNowBusy}
           disabled={anyBusy}
-          className={PRIMARY_BTN}
+          onClick={() => void handleFillNow()}
         >
           {fillNowBusy ? t("motorFuelEstimator.saving") : t("motorFuelEstimator.fillNow")}
-        </button>
+        </Button>
         <p className="mt-1.5 text-center text-[11px] text-(--color-text-muted)">
           {t("motorFuelEstimator.fillNowHint")}
         </p>
@@ -215,47 +200,49 @@ export default function MotorFuelEstimator({
 
       {/* ── Manual Input — inline, tidak nge-card berlapis ───── */}
       <div className="mt-5">
-        <p className="text-xs font-semibold text-(--color-text-secondary)">
+        <SectionLabel className="text-(--color-text-secondary)">
           {t("motorFuelEstimator.manualSection")}
-        </p>
+        </SectionLabel>
         <div className="mt-2 grid gap-3 sm:grid-cols-2">
-          <div>
-            <label htmlFor="fuel-manual-km" className={LABEL}>
-              {t("motorFuelEstimator.kmAtFill")}
-            </label>
-            <input
+          <div className="space-y-1.5">
+            <SectionLabel className="mb-0">{t("motorFuelEstimator.kmAtFill")}</SectionLabel>
+            <TextInput
               id="fuel-manual-km"
               type="text"
               inputMode="numeric"
               value={manualKm}
               onChange={(e) => setManualKm(digitsOnly(e.target.value, 9))}
-              className={`${INPUT} mt-1`}
               placeholder={t("motorFuelEstimator.kmPlaceholder")}
               disabled={anyBusy}
+              className="tabular-nums"
+              trailingSlot={
+                <span className="text-xs font-semibold text-(--color-text-muted)">km</span>
+              }
             />
           </div>
-          <div>
-            <label htmlFor="fuel-manual-date" className={LABEL}>
-              {t("motorFuelEstimator.date")}
-            </label>
-            <input
+          <div className="space-y-1.5">
+            <SectionLabel className="mb-0">{t("motorFuelEstimator.date")}</SectionLabel>
+            <TextInput
               id="fuel-manual-date"
               type="date"
               value={manualDate}
               onChange={(e) => setManualDate(e.target.value)}
-              className={`${INPUT} mt-1`}
               disabled={anyBusy}
             />
           </div>
         </div>
-        <button
+        <Button
           type="button"
-          onClick={() => void handleManualSave()}
+          variant="secondary"
+          size="lg"
+          fullWidth
+          loading={manualBusy}
           disabled={!manualValid || anyBusy}
-          className={`${SECONDARY_BTN} mt-3`}
+          className="mt-3"
+          onClick={() => void handleManualSave()}
         >
           {manualBusy ? t("motorFuelEstimator.saving") : t("motorFuelEstimator.saveFill")}
-        </button>
+        </Button>
       </div>
     </div>
   );

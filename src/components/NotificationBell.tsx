@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { IconButton } from "@/components/ui";
 import { useNotifications } from "@/lib/notifications-runner";
 import { useTranslation } from "@/lib/i18n";
 
@@ -15,6 +16,7 @@ import { useTranslation } from "@/lib/i18n";
  *    count instead of querying the DB ourselves.
  */
 export default function NotificationBell({ className = "" }: { className?: string }) {
+  const router = useRouter();
   const { unreadCount, ready } = useNotifications();
   const { t } = useTranslation();
   // Tiny mount delay so the count doesn't pop in jarringly on first paint.
@@ -29,25 +31,28 @@ export default function NotificationBell({ className = "" }: { className?: strin
     display > 99 ? "99+" : String(display);
 
   return (
-    <Link
-      href="/notifications"
-      aria-label={
-        has
-          ? t("notificationBell.ariaBadge", { n: display })
-          : t("notificationBell.ariaOpen")
-      }
-      className={`relative inline-flex h-10 w-10 items-center justify-center rounded-xl border border-(--color-border)/70 text-(--color-text-secondary) transition-all hover:border-(--color-border) hover:bg-(--color-surface-alt) active:scale-95 ${className}`}
-    >
-      <BellIcon className="h-5 w-5" />
+    <div className={`relative inline-flex ${className}`}>
+      <IconButton
+        label={
+          has
+            ? t("notificationBell.ariaBadge", { n: display })
+            : t("notificationBell.ariaOpen")
+        }
+        variant="ghost"
+        size="lg"
+        onClick={() => router.push("/notifications")}
+      >
+        <BellIcon className="h-5 w-5" />
+      </IconButton>
       {has ? (
         <span
           aria-hidden
-          className="absolute -right-1 -top-1 inline-flex min-w-[18px] items-center justify-center rounded-full bg-(--color-critical) px-1 text-[10px] font-bold text-white shadow-sm ring-2 ring-(--color-bg)"
+          className="pointer-events-none absolute -right-0.5 -top-0.5 inline-flex min-w-[18px] items-center justify-center rounded-full bg-(--color-critical) px-1 text-[10px] font-bold text-(--color-bg) shadow-sm ring-2 ring-(--color-bg)"
         >
           {label}
         </span>
       ) : null}
-    </Link>
+    </div>
   );
 }
 

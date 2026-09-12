@@ -3,7 +3,11 @@ import { mapNotification, mapReminder, mapVehicle } from "../mappers";
 import { requireUser } from "../auth-helpers";
 import { getLatestMileageKm } from "./mileage";
 import { decideEmit, evaluateReminder, dayBucket } from "@/lib/notification-engine";
-import { pickCopy } from "@/lib/notification-copy";
+import {
+  pickCopy,
+  type NumberFormatFn,
+  type TranslateFn,
+} from "@/lib/notification-copy";
 import { getReminderPreset } from "@/lib/reminder-presets";
 import type { AppNotification, Reminder, Vehicle } from "@/lib/types";
 
@@ -87,7 +91,19 @@ export type EvaluateAndEmitSummary = {
   skipped: number;
 };
 
-export async function evaluateAndEmitForUser(): Promise<EvaluateAndEmitSummary> {
+/**
+ * Evaluate all reminders untuk current user + emit notifikasi kalau
+ * threshold terlewati. Idempotent per (reminder, day) via anti-spam check
+ * di `decideEmit`.
+ *
+ * i18n: `t` + `formatNumber` di-inject dari caller (biasanya React
+ * component/provider di `notifications-runner.tsx`) sehingga title +
+ * body notifikasi mengikuti locale aktif user.
+ */
+export async function evaluateAndEmitForUser(
+  t: TranslateFn,
+  formatNumber: NumberFormatFn,
+): Promise<EvaluateAndEmitSummary> {
   const user = await requireUser();
 
   // Pull all the user's vehicles + their reminders in two round-trips. We
@@ -143,17 +159,22 @@ export async function evaluateAndEmitForUser(): Promise<EvaluateAndEmitSummary> 
     }
 
     // Build the copy. We seed by `(reminder.id, day, kind)` so the variant
-    // stays stable for the day the user receives it.
+    // stays stable for the day the user receives it. `t` + `formatNumber`
+    // di-forward supaya copy dalam locale user (bukan hardcoded Indonesia).
     const preset = getReminderPreset(r.preset_slug);
-    const copy = pickCopy({
-      kind: decision.notifyType,
-      presetSlug: r.preset_slug,
-      presetLabel: preset?.label,
-      vehicleName: vehicle.name,
-      remainingKm: evalRes.remainingKm,
-      remainingDays: evalRes.remainingDays,
-      seed: `${r.id}:${seedDay}:${decision.notifyType}`,
-    });
+    const copy = pickCopy(
+      {
+        kind: decision.notifyType,
+        presetSlug: r.preset_slug,
+        presetLabel: preset?.label,
+        vehicleName: vehicle.name,
+        remainingKm: evalRes.remainingKm,
+        remainingDays: evalRes.remainingDays,
+        seed: `${r.id}:${seedDay}:${decision.notifyType}`,
+      },
+      t,
+      formatNumber,
+    );
 
     // Update reminder anti-spam state FIRST (race-safety), then insert.
     // If the insert fails, the reminder still has a stale-but-correct
@@ -222,12 +243,17 @@ export function _resetThrottleForTest(): void {
 
 /** Convenience: latest-km sometimes needs to be force-fresh (after the user
  *  just logged a mileage update). Re-evaluating with stale `current_mileage_km`
- *  could miss a "telat" status that just appeared. */
-export async function refreshVehicleLatestKmThenEmit(): Promise<EvaluateAndEmitSummary> {
+ *  could miss a "telat" status that just appeared.
+ *
+ *  `t` + `formatNumber` di-forward supaya copy dalam locale user. */
+export async function refreshVehicleLatestKmThenEmit(
+  t: TranslateFn,
+  formatNumber: NumberFormatFn,
+): Promise<EvaluateAndEmitSummary> {
   // Touch vehicles to force the cache layer (PostgREST is stateless so this
   // is mostly a placeholder for a future server-side refresh hook). The
   // `getLatestMileageKm` per-vehicle is more expensive than reading the
   // synced column, so we accept slight staleness in favor of a single read.
   void getLatestMileageKm;
-  return evaluateAndEmitForUser();
+  return evaluateAndEmitForUser(t, formatNumber);
 }

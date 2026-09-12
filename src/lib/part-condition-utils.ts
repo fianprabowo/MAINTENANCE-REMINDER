@@ -173,29 +173,12 @@ export function describeRemaining(life: PartLifeResult): RemainingDescriptor {
   return { kind: "unknown" };
 }
 
-/**
- * Legacy: return hardcoded Bahasa Indonesia. Dipertahankan untuk backward
- * compat; UI baru sebaiknya pakai `describeRemaining()` + render sendiri
- * via `t()` untuk locale awareness.
- *
- * @deprecated Gunakan `describeRemaining()` + `t()` di UI React.
- */
-export function formatRemaining(life: PartLifeResult): string {
-  const d = describeRemaining(life);
-  switch (d.kind) {
-    case "empty":
-      return "Belum ada data servis";
-    case "overdue":
-      return "Sudah waktunya ganti";
-    case "km":
-      return `Sisa ${d.value.toLocaleString("id-ID")} km`;
-    case "days":
-      return `Sisa ${d.value.toLocaleString("id-ID")} hari`;
-    case "unknown":
-    default:
-      return "—";
-  }
-}
+// Legacy `formatRemaining(life: PartLifeResult): string` sudah dihapus
+// (Sept 2026) — hardcoded Bahasa Indonesia + tidak dipakai lagi setelah
+// UI migrate ke `describeRemaining()` + `t()`. Kalau butuh format lokasi
+// baru, pakai pattern:
+//   const d = describeRemaining(life);
+//   switch (d.kind) { case "km": return t("...", { value: d.value }); }
 
 /** i18n key untuk status label — caller panggil `t(statusLabelKey(status))`. */
 export function statusLabelKey(status: PartLifeStatus | null): TranslationKey {

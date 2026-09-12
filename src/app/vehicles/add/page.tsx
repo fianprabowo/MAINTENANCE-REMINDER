@@ -13,6 +13,7 @@ import {
 import type { MotorcycleCategory, MotorcycleModel } from "@/lib/types";
 import CustomSelect from "@/components/CustomSelect";
 import OdometerScanButton from "@/components/OdometerScanButton";
+import { Button, IconButton, SectionLabel, TextInput } from "@/components/ui";
 import { toast } from "sonner";
 import { useAppErrorMessage, useTranslation } from "@/lib/i18n";
 
@@ -50,28 +51,52 @@ function buildYearOptions(showAll: boolean): { value: string; label: string }[] 
 
 /**
  * Ringkas nilai spec (mileage/tank/eff) menjadi satu baris "12.500 km •
- * 5,5 L • 45 km/L". `emptyLabel` di-inject dari luar supaya cocok dengan
- * locale aktif (misal "Belum diisi" vs "Not filled").
+ * 5,5 L • 45 km/L" (id) atau "12,500 km • 5.5 L • 45 km/L" (en).
+ *
+ * `formatNumber` di-inject dari `useTranslation()` di caller — supaya
+ * angka mengikuti locale aktif user, bukan hardcoded `id-ID`. Sebelumnya
+ * pakai `toLocaleString("id-ID")` + `replace(".", ",")` yang membuat
+ * user Bahasa Inggris tetap lihat format Indonesia.
+ *
+ * `emptyLabel` di-inject supaya cocok dengan locale ("Belum diisi" vs
+ * "Not filled").
  */
 function buildSpecSummary(
   mileage: string,
   tank: string,
   efficiency: string,
   emptyLabel: string,
+  formatNumber: (n: number, opts?: Intl.NumberFormatOptions) => string,
 ): string {
   const parts: string[] = [];
 
   const km = mileage.trim();
   if (km) {
     const n = parseInt(km, 10);
-    parts.push(Number.isFinite(n) ? `${n.toLocaleString("id-ID")} km` : `${km} km`);
+    parts.push(Number.isFinite(n) ? `${formatNumber(n)} km` : `${km} km`);
   }
 
   const tankVal = tank.trim();
-  if (tankVal) parts.push(`${tankVal.replace(".", ",")} L`);
+  if (tankVal) {
+    // Input form pakai "." sebagai decimal separator (native `<input
+    // type="number">`). Kita parse ke Number lalu format via locale.
+    const n = parseFloat(tankVal);
+    parts.push(
+      Number.isFinite(n)
+        ? `${formatNumber(n, { maximumFractionDigits: 2 })} L`
+        : `${tankVal} L`,
+    );
+  }
 
   const effVal = efficiency.trim();
-  if (effVal) parts.push(`${effVal.replace(".", ",")} km/L`);
+  if (effVal) {
+    const n = parseFloat(effVal);
+    parts.push(
+      Number.isFinite(n)
+        ? `${formatNumber(n, { maximumFractionDigits: 2 })} km/L`
+        : `${effVal} km/L`,
+    );
+  }
 
   return parts.length > 0 ? parts.join(" • ") : emptyLabel;
 }
@@ -98,7 +123,7 @@ export default function AddVehiclePage() {
   const { user, loading: authLoading } = useAuth();
   const { setSelectedVehicleId } = useSelectedVehicle();
   const router = useRouter();
-  const { t } = useTranslation();
+  const { t, formatNumber } = useTranslation();
   const describeAppError = useAppErrorMessage();
 
   // Options di-generate di dalam komponen agar label ikut locale aktif.
@@ -282,12 +307,14 @@ export default function AddVehiclePage() {
         form.tank_capacity_l,
         form.fuel_efficiency_km_l,
         specEmptyLabel,
+        formatNumber,
       ),
     [
       form.initial_mileage,
       form.tank_capacity_l,
       form.fuel_efficiency_km_l,
       specEmptyLabel,
+      formatNumber,
     ],
   );
 
@@ -358,22 +385,10 @@ export default function AddVehiclePage() {
     }
   };
 
-  // ---- Style tokens ---------------------------------------------------------
-  // White (--color-bg) input on a soft card surface reads as "active" instead
-  // of the previous gray-on-gray look. Strong focus ring + hover border give
-  // tactile feedback; the global `input{background:--color-surface}` rule is
-  // overridden by the higher-specificity `bg-(--color-bg)` utility.
-  const inputBase =
-    "w-full rounded-2xl border bg-(--color-bg) px-4 py-3.5 text-sm font-medium text-(--color-text) outline-none transition-all placeholder:font-normal placeholder:text-(--color-text-muted) focus:border-(--color-primary) focus:ring-4 focus:ring-(--color-primary)/15";
-  const inputClass = `${inputBase} border-(--color-border)/70 hover:border-(--color-border) hover:bg-(--color-primary-soft)/50 bg-white dark:bg-(--color-surface)`;
-  const errorBorder = (value: string) =>
-    submitted && !value.trim()
-      ? `${inputBase} border-(--color-critical) ring-4 ring-(--color-critical)/10`
-      : inputClass;
-
   const cardClass = "rounded-3xl bg-(--color-surface) p-5 shadow-sm";
-  const sectionLabel =
-    "mb-3 text-sm font-semibold text-(--color-text)";
+
+  const textareaClass =
+    "w-full resize-none rounded-2xl border border-transparent bg-(--color-surface-alt) px-5 py-3.5 text-sm outline-none transition-colors placeholder:text-(--color-text-muted) focus:border-(--color-text)/20";
 
   const hasSpecValues =
     !!form.initial_mileage.trim() ||
@@ -383,20 +398,18 @@ export default function AddVehiclePage() {
 
   const showNotesField = notesOpen || !!form.notes.trim();
 
-  const specInputClass =
-    "w-full rounded-2xl border border-slate-200/70 bg-slate-50 px-4 py-3.5 text-sm font-medium text-(--color-text) shadow-sm outline-none transition-all placeholder:font-normal placeholder:text-(--color-text-muted) hover:border-slate-300/80 hover:bg-slate-100/80 focus:border-(--color-primary) focus:bg-white dark:border-(--color-border)/50 dark:bg-(--color-surface-alt) dark:hover:bg-(--color-surface-alt) dark:focus:border-(--color-primary) dark:focus:bg-(--color-surface)";
-
   const specFieldLabel =
     "flex items-center gap-2 text-xs font-semibold tracking-wide text-(--color-text-secondary)";
 
   return (
     <div className="flex min-h-screen flex-col">
       <main className="flex-1 px-5 pb-8 pt-5">
-        <button
-          type="button"
+        <IconButton
+          label={t("vehiclesAdd.back")}
+          variant="ghost"
+          size="lg"
           onClick={() => router.back()}
-          aria-label={t("vehiclesAdd.back")}
-          className="mb-5 flex h-10 w-10 items-center justify-center rounded-full bg-(--color-surface) text-(--color-text-secondary) shadow-sm transition-all hover:text-(--color-text) active:scale-95"
+          className="mb-5"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -412,7 +425,7 @@ export default function AddVehiclePage() {
             <line x1="19" y1="12" x2="5" y2="12" />
             <polyline points="12 19 5 12 12 5" />
           </svg>
-        </button>
+        </IconButton>
 
         {/* ---- Hero -------------------------------------------------------- */}
         <div className="relative mb-6 overflow-hidden rounded-3xl border border-(--color-primary)/15 bg-(--color-primary-soft)/40 p-6 shadow-sm">
@@ -450,7 +463,7 @@ export default function AddVehiclePage() {
         <form onSubmit={handleSubmit} noValidate className="space-y-4">
           {/* ---- Tipe Motor (drives oil interval + tank/eff defaults) -------- */}
           <div className={cardClass}>
-            <p className={sectionLabel}>{t("vehiclesAdd.typeLabel")}</p>
+            <SectionLabel className="mb-3">{t("vehiclesAdd.typeLabel")}</SectionLabel>
             <CustomSelect
               options={TIPE_MOTOR_OPTIONS}
               value={tipeMotor}
@@ -464,7 +477,7 @@ export default function AddVehiclePage() {
 
           {/* ---- Bagian utama: 3 field --------------------------------------- */}
           <div className={cardClass}>
-            <p className={sectionLabel}>{t("vehiclesAdd.mainDataTitle")}</p>
+            <SectionLabel className="mb-3">{t("vehiclesAdd.mainDataTitle")}</SectionLabel>
             <div className="space-y-3">
               <CustomSelect
                 options={brandOptions}
@@ -477,11 +490,11 @@ export default function AddVehiclePage() {
               />
 
               {selectedBrand === OTHER_BRAND ? (
-                <input
+                <TextInput
                   type="text"
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  className={errorBorder(form.name)}
+                  error={submitted && !form.name.trim()}
                   placeholder={t("vehiclesAdd.namePlaceholderCustom")}
                   autoComplete="off"
                   required
@@ -510,11 +523,11 @@ export default function AddVehiclePage() {
                     error={submitted && !form.name.trim()}
                   />
                   {modelPickerValue === OTHER_MODEL && (
-                    <input
+                    <TextInput
                       type="text"
                       value={form.name}
                       onChange={(e) => setForm({ ...form, name: e.target.value })}
-                      className={errorBorder(form.name)}
+                      error={submitted && !form.name.trim()}
                       placeholder={t("vehiclesAdd.nameTypeCustom")}
                       autoComplete="off"
                       required
@@ -542,8 +555,10 @@ export default function AddVehiclePage() {
             </div>
           </div>
 
-          {/* ---- Spesifikasi Kendaraan (collapsible) ----------------------- */}
-          <div className="overflow-hidden rounded-[20px] bg-white p-5 shadow-sm ring-1 ring-slate-200/60 dark:bg-(--color-surface) dark:ring-(--color-border)/40">
+          {/* ---- Spesifikasi Kendaraan (collapsible) -----------------------
+              Container pakai `--color-surface` untuk kedua theme (dulu white
+              di light + surface di dark). Konsisten dengan card lain di app. */}
+          <div className="overflow-hidden rounded-[20px] bg-(--color-surface) p-5 shadow-sm ring-1 ring-(--color-border)/40">
             <button
               type="button"
               onClick={() => setAdvancedOpen((o) => !o)}
@@ -566,10 +581,16 @@ export default function AddVehiclePage() {
                   </p>
                 )}
               </div>
+              {/*
+                Chevron icon container — migrasi dari `bg-slate-100` (light-only
+                hardcoded) ke `--color-surface-alt` token supaya sama antara
+                light & dark. Selected/open state pakai `--color-text` inverted
+                supaya konsisten dengan "loud" pattern lain di app.
+              */}
               <span
                 className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-all duration-300 ease-out motion-reduce:transition-none ${advancedOpen
-                  ? "rotate-180 bg-(--color-primary-soft) text-(--color-primary)"
-                  : "bg-slate-100 text-(--color-text-secondary) dark:bg-(--color-surface-alt)"
+                  ? "rotate-180 bg-(--color-text) text-(--color-bg)"
+                  : "bg-(--color-surface-alt) text-(--color-text-secondary)"
                   }`}
                 aria-hidden
               >
@@ -582,26 +603,27 @@ export default function AddVehiclePage() {
                 }`}
             >
               <div className="overflow-hidden">
-                <div className="mt-4 space-y-4 border-t border-slate-100 pt-4 dark:border-(--color-border)/40">
+                <div className="mt-4 space-y-4 border-t border-(--color-border)/40 pt-4">
                   {/* Kilometer — full width */}
                   <div className="space-y-2">
                     <span className={specFieldLabel}>
                       {t("vehiclesAdd.specInitialKm")}
                     </span>
                     <div className="flex gap-2">
-                      <div className="relative min-w-0 flex-1">
-                        <input
+                      <div className="min-w-0 flex-1">
+                        <TextInput
                           type="number"
                           inputMode="numeric"
                           value={form.initial_mileage}
                           onChange={(e) => setForm({ ...form, initial_mileage: e.target.value })}
-                          className={specInputClass}
                           placeholder={t("vehiclesAdd.specInitialKmPlaceholder")}
                           min={0}
+                          trailingSlot={
+                            <span className="text-xs font-semibold text-(--color-text-muted)">
+                              km
+                            </span>
+                          }
                         />
-                        <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xs font-semibold text-(--color-text-muted)">
-                          km
-                        </span>
                       </div>
                       <OdometerScanButton
                         variant="icon"
@@ -617,48 +639,46 @@ export default function AddVehiclePage() {
                       <span className={specFieldLabel}>
                         {t("vehiclesAdd.specTank")}
                       </span>
-                      <div className="relative">
-                        <input
-                          type="number"
-                          inputMode="decimal"
-                          step="0.1"
-                          value={form.tank_capacity_l}
-                          onChange={(e) => {
-                            setTankTouched(true);
-                            setForm({ ...form, tank_capacity_l: e.target.value });
-                          }}
-                          className={specInputClass}
-                          placeholder={t("vehiclesAdd.specTankPlaceholder")}
-                          min={0}
-                        />
-                        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-(--color-text-muted)">
-                          L
-                        </span>
-                      </div>
+                      <TextInput
+                        type="number"
+                        inputMode="decimal"
+                        step="0.1"
+                        value={form.tank_capacity_l}
+                        onChange={(e) => {
+                          setTankTouched(true);
+                          setForm({ ...form, tank_capacity_l: e.target.value });
+                        }}
+                        placeholder={t("vehiclesAdd.specTankPlaceholder")}
+                        min={0}
+                        trailingSlot={
+                          <span className="text-xs font-semibold text-(--color-text-muted)">
+                            L
+                          </span>
+                        }
+                      />
                     </div>
 
                     <div className="space-y-2">
                       <span className={specFieldLabel}>
                         {t("vehiclesAdd.specEfficiency")}
                       </span>
-                      <div className="relative">
-                        <input
-                          type="number"
-                          inputMode="decimal"
-                          step="0.1"
-                          value={form.fuel_efficiency_km_l}
-                          onChange={(e) => {
-                            setEffTouched(true);
-                            setForm({ ...form, fuel_efficiency_km_l: e.target.value });
-                          }}
-                          className={specInputClass}
-                          placeholder={t("vehiclesAdd.specEfficiencyPlaceholder")}
-                          min={0}
-                        />
-                        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-(--color-text-muted)">
-                          km/L
-                        </span>
-                      </div>
+                      <TextInput
+                        type="number"
+                        inputMode="decimal"
+                        step="0.1"
+                        value={form.fuel_efficiency_km_l}
+                        onChange={(e) => {
+                          setEffTouched(true);
+                          setForm({ ...form, fuel_efficiency_km_l: e.target.value });
+                        }}
+                        placeholder={t("vehiclesAdd.specEfficiencyPlaceholder")}
+                        min={0}
+                        trailingSlot={
+                          <span className="text-xs font-semibold text-(--color-text-muted)">
+                            km/L
+                          </span>
+                        }
+                      />
                     </div>
                   </div>
 
@@ -675,7 +695,7 @@ export default function AddVehiclePage() {
                           onBlur={() => {
                             if (!form.notes.trim()) setNotesOpen(false);
                           }}
-                          className={`${specInputClass} resize-none`}
+                          className={textareaClass}
                           rows={3}
                           placeholder={t("vehiclesAdd.specNotesPlaceholder")}
                           autoFocus={notesOpen && !form.notes.trim()}
@@ -685,7 +705,7 @@ export default function AddVehiclePage() {
                       <button
                         type="button"
                         onClick={() => setNotesOpen(true)}
-                        className="flex w-full items-center gap-2 rounded-2xl border border-slate-200/70 bg-slate-50 px-4 py-3.5 text-left text-sm font-medium text-(--color-text-secondary) shadow-sm transition-all hover:border-slate-300/80 hover:bg-slate-100/80 focus:border-(--color-primary) focus:outline-none dark:border-(--color-border)/50 dark:bg-(--color-surface-alt) dark:focus:border-(--color-primary)"
+                        className="flex w-full items-center gap-2 rounded-2xl border border-transparent bg-(--color-surface-alt) px-5 py-3.5 text-left text-sm font-medium text-(--color-text-secondary) transition-colors hover:bg-(--color-surface) focus:border-(--color-text)/20 focus:outline-none"
                       >
                         {t("vehiclesAdd.specAddNotes")}
                       </button>
@@ -696,29 +716,16 @@ export default function AddVehiclePage() {
             </div>
           </div>
 
-          <button
+          <Button
             type="submit"
+            variant="primary"
+            size="lg"
+            fullWidth
+            loading={loading}
             disabled={loading || !isFormValid}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-(--color-primary) py-4 text-base font-bold text-white shadow-md shadow-(--color-primary)/25 transition-all duration-200 hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100"
           >
-            {loading ? (
-              <>
-                <svg
-                  className="h-5 w-5 animate-spin text-white"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                >
-                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeOpacity="0.25" strokeWidth="4" />
-                  <path d="M4 12a8 8 0 0 1 8-8" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
-                </svg>
-                <span>{t("vehiclesAdd.submitting")}</span>
-              </>
-            ) : (
-              <span>{t("vehiclesAdd.submit")}</span>
-            )}
-          </button>
+            {loading ? t("vehiclesAdd.submitting") : t("vehiclesAdd.submit")}
+          </Button>
         </form>
       </main>
     </div>

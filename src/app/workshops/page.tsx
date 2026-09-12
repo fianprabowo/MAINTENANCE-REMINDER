@@ -7,12 +7,15 @@ import { useAuth } from "@/lib/auth";
 import { fetchMotorcycleCategories } from "@/lib/supabase";
 import type { MotorcycleCategory } from "@/lib/types";
 import { DetailSkeleton } from "@/components/LoadingSkeleton";
+import { Button, IconButton, SectionLabel, Spinner, TextInput } from "@/components/ui";
 import { useTranslation } from "@/lib/i18n";
 
 const WorkshopMap = dynamic(() => import("@/components/WorkshopMap"), {
   ssr: false,
   loading: () => (
-    <div className="h-[260px] animate-pulse rounded-3xl bg-(--color-border)/35 ring-1 ring-(--color-border)/40" />
+    <div className="flex h-[260px] items-center justify-center rounded-3xl bg-(--color-border)/35 ring-1 ring-(--color-border)/40">
+      <Spinner className="h-8 w-8" />
+    </div>
   ),
 });
 
@@ -112,13 +115,15 @@ function WorkshopsContent() {
   return (
     <div className="flex min-h-screen flex-col">
       <main className="flex-1 px-5 pb-8 pt-5">
-        <button
-          type="button"
+        <IconButton
+          label={t("workshops.back")}
+          variant="ghost"
+          size="lg"
           onClick={() => router.back()}
-          className="mb-4 text-sm font-semibold text-(--color-text-secondary) transition-colors hover:text-(--color-text)"
+          className="mb-4 self-start"
         >
-          ← {t("workshops.back")}
-        </button>
+          <BackIcon className="h-5 w-5" />
+        </IconButton>
 
         {loading ? (
           <DetailSkeleton />
@@ -133,63 +138,54 @@ function WorkshopsContent() {
 
             <WorkshopMap userLat={lat} userLng={lng} height={260} />
 
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <Button
                 type="button"
+                variant="secondary"
+                size="sm"
                 onClick={locate}
-                className="rounded-full bg-(--color-surface) px-4 py-2 text-xs font-bold shadow-sm ring-1 ring-(--color-border)/60 transition-all hover:shadow-md"
+                leadingIcon={<LocateIcon className="h-4 w-4" />}
               >
                 {t("workshops.refreshLocation")}
-              </button>
+              </Button>
               {geoError && (
-                <span className="self-center text-xs font-medium text-amber-700 dark:text-amber-400/90">
+                <span className="self-center text-xs font-bold text-(--color-text)">
                   {geoError}
                 </span>
               )}
             </div>
 
             <div className="mt-6 space-y-3">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)">
-                {t("workshops.brandLabel")}
-              </label>
-              <input
+              <SectionLabel>{t("workshops.brandLabel")}</SectionLabel>
+              <TextInput
                 type="text"
                 value={brand}
                 onChange={(e) => setBrand(e.target.value)}
-                className="w-full rounded-2xl border border-(--color-border) bg-(--color-bg) px-4 py-3.5 text-sm outline-none focus:border-(--color-primary) focus:ring-2 focus:ring-(--color-primary)/20"
                 placeholder={t("workshops.brandPlaceholder")}
               />
             </div>
 
             <div className="mt-5">
-              <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)">
-                {t("workshops.typeLabel")}
-              </p>
+              <SectionLabel className="mb-2">{t("workshops.typeLabel")}</SectionLabel>
               <div className="flex flex-wrap gap-2">
-                <button
+                <Button
                   type="button"
+                  variant={slug === "" ? "primary" : "secondary"}
+                  size="sm"
                   onClick={() => setSlug("")}
-                  className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-all ${
-                    slug === ""
-                      ? "bg-(--color-primary) text-white shadow-md"
-                      : "bg-(--color-surface) text-(--color-text-secondary) ring-1 ring-(--color-border)/60"
-                  }`}
                 >
                   {t("workshops.typeAll")}
-                </button>
+                </Button>
                 {categories.map((c) => (
-                  <button
+                  <Button
                     key={c.id}
                     type="button"
+                    variant={slug === c.slug ? "primary" : "secondary"}
+                    size="sm"
                     onClick={() => setSlug(c.slug)}
-                    className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-all ${
-                      slug === c.slug
-                        ? "bg-(--color-primary) text-white shadow-md"
-                        : "bg-(--color-surface) text-(--color-text-secondary) ring-1 ring-(--color-border)/60"
-                    }`}
                   >
                     {c.name_display.replace(/^Motor\s/, "")}
-                  </button>
+                  </Button>
                 ))}
               </div>
               {activeCategory?.tips && (
@@ -198,25 +194,25 @@ function WorkshopsContent() {
             </div>
 
             <div className="mt-8 space-y-3">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)">
-                {t("workshops.openInMap")}
-              </p>
-              <a
-                href={googleMapsUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block w-full rounded-3xl bg-(--color-primary) py-4 text-center text-sm font-bold text-white shadow-lg shadow-(--color-primary)/30 transition-all hover:brightness-110 active:scale-[0.99]"
+              <SectionLabel>{t("workshops.openInMap")}</SectionLabel>
+              <Button
+                type="button"
+                variant="primary"
+                size="lg"
+                fullWidth
+                onClick={() => window.open(googleMapsUrl, "_blank", "noopener,noreferrer")}
               >
                 {t("workshops.googleMapsCta", { q: mapsQuery })}
-              </a>
-              <a
-                href={appleMapsUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block w-full rounded-3xl border border-(--color-border) bg-(--color-surface) py-3.5 text-center text-sm font-bold shadow-sm transition-all hover:shadow-md"
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="lg"
+                fullWidth
+                onClick={() => window.open(appleMapsUrl, "_blank", "noopener,noreferrer")}
               >
                 {t("workshops.appleMapsCta")}
-              </a>
+              </Button>
             </div>
 
             <p className="mt-6 text-center text-[11px] leading-relaxed text-(--color-text-muted)">
@@ -226,6 +222,44 @@ function WorkshopsContent() {
         )}
       </main>
     </div>
+  );
+}
+
+function BackIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+    >
+      <line x1="19" y1="12" x2="5" y2="12" />
+      <polyline points="12 19 5 12 12 5" />
+    </svg>
+  );
+}
+
+function LocateIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+    >
+      <circle cx="12" cy="12" r="3" />
+      <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+    </svg>
   );
 }
 

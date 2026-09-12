@@ -1,5 +1,20 @@
 "use client";
 
+/**
+ * CustomSelect — dropdown button dengan trigger yang match TextInput shape.
+ *
+ * Refactored untuk konsisten dengan design system (login-page tone):
+ *  - Trigger: `h-14 rounded-full` pill (sama seperti TextInput).
+ *  - Bg: `bg-(--color-surface-alt)` (sama dengan TextInput default bg).
+ *  - Border: transparent default, subtle focus/open (`border-(--color-text)/20`),
+ *    red kalau error.
+ *  - Popup: tetap `rounded-2xl` (popup adalah card, bukan pill — sengaja
+ *    berbeda shape supaya secara visual "pop out" dari trigger).
+ *
+ * Behavior tidak berubah: keyboard escape close, click outside close,
+ * scroll-to-selected on open, hidden `<input required>` untuk form validation.
+ */
+
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useTranslation } from "@/lib/i18n";
 
@@ -111,17 +126,25 @@ export default function CustomSelect({
         type="button"
         disabled={disabled}
         onClick={() => !disabled && setOpen(!open)}
-        className={`flex w-full items-center justify-between rounded-2xl border bg-white px-4 py-3.5 text-left text-sm outline-none transition-all dark:bg-(--color-surface) ${disabled
-            ? "cursor-not-allowed border-(--color-border)/70 opacity-50"
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        className={`flex h-14 w-full items-center justify-between rounded-full border bg-(--color-surface-alt) px-5 text-left text-sm outline-none transition-colors ${
+          disabled
+            ? "cursor-not-allowed border-transparent opacity-50"
             : "cursor-pointer"
-          } ${!disabled && open
-            ? "border-(--color-primary) ring-4 ring-(--color-primary)/15"
+        } ${
+          !disabled && open
+            ? "border-(--color-text)/20"
             : !disabled && error
-              ? "border-red-300 hover:bg-red-50/50 dark:border-red-800/60 dark:hover:bg-red-950/20"
+              ? "border-(--color-text) ring-2 ring-(--color-text)/25"
               : !disabled
-                ? "border-(--color-border)/70 hover:border-(--color-border) hover:bg-(--color-primary-soft)/50"
-                : "border-(--color-border)/70"
-          } ${!selected ? "text-(--color-text-muted)" : "font-medium text-(--color-text)"}`}
+                ? "border-transparent hover:border-(--color-border)"
+                : "border-transparent"
+        } ${
+          !selected
+            ? "text-(--color-text-muted)"
+            : "font-medium text-(--color-text)"
+        }`}
       >
         <span className="flex items-center gap-2 truncate">
           {selected ? (
@@ -134,15 +157,17 @@ export default function CustomSelect({
           )}
         </span>
         <ChevronDown
-          className={`h-4 w-4 shrink-0 text-(--color-text-muted) transition-transform duration-200 ${open ? "rotate-180" : ""
-            }`}
+          className={`h-4 w-4 shrink-0 text-(--color-text-muted) transition-transform duration-200 ${
+            open ? "rotate-180" : ""
+          }`}
         />
       </button>
 
       {open && (
         <div
           ref={listRef}
-          className="absolute left-0 right-0 z-50 mt-2 overflow-hidden rounded-2xl border border-(--color-border) bg-white shadow-xl shadow-black/8 dark:bg-(--color-bg) dark:shadow-black/30"
+          role="listbox"
+          className="absolute left-0 right-0 z-50 mt-2 overflow-hidden rounded-2xl border border-(--color-border) bg-(--color-bg) shadow-xl shadow-black/10 dark:shadow-black/30"
         >
           <div
             className="overflow-y-auto overscroll-contain py-1.5"
@@ -154,19 +179,24 @@ export default function CustomSelect({
                 <button
                   key={option.value}
                   type="button"
+                  role="option"
+                  aria-selected={isSelected}
                   onClick={() => {
                     onChange(option.value);
                     setOpen(false);
                   }}
-                  className={`flex w-full cursor-pointer items-center gap-2.5 px-4 py-3 text-left text-sm transition-colors ${isSelected
-                      ? "bg-(--color-primary-soft)/60 font-semibold text-(--color-text) hover:bg-(--color-primary-soft)/80"
-                      : "text-(--color-text) hover:bg-(--color-primary-soft)/50 active:bg-(--color-primary-soft)/60"
-                    }`}
+                  className={`flex w-full cursor-pointer items-center gap-2.5 px-4 py-3 text-left text-sm transition-colors ${
+                    isSelected
+                      ? "bg-(--color-surface-alt) font-semibold text-(--color-text)"
+                      : "text-(--color-text) hover:bg-(--color-surface-alt)/60 active:bg-(--color-surface-alt)"
+                  }`}
                 >
-                  {option.icon && <span className="text-base">{option.icon}</span>}
+                  {option.icon && (
+                    <span className="text-base">{option.icon}</span>
+                  )}
                   <span className="flex-1">{option.label}</span>
                   {isSelected && (
-                    <CheckIcon className="h-4 w-4 text-(--color-primary)" />
+                    <CheckIcon className="h-4 w-4 text-(--color-text)" />
                   )}
                 </button>
               );

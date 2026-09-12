@@ -16,8 +16,19 @@
  *   • title ≤ 40 chars
  *   • body  ≤ 80 chars
  *
- * Sanity check via runtime assertion is intentionally left out — keep this
- * file dependency-free. The variations below are hand-checked.
+ * ---------------------------------------------------------------------------
+ * i18n:
+ * ---------------------------------------------------------------------------
+ * Semua string di-template via key locale (`notifications.copy.*`). Caller
+ * pass `t` + `formatNumber` (dari `useTranslation()` di React tree) sehingga
+ * copy ikut locale aktif user. Number formatting (mis. "12.500 km" vs
+ * "12,500 km") juga locale-aware.
+ *
+ * Catatan design: notifikasi *stored* di DB dengan title+body plain string
+ * pada saat pembuatan. Jadi kalau user ganti locale setelah notifikasi
+ * dibuat, notifikasi lama tetap dalam bahasa asli. Ini mirror behavior
+ * messaging apps normal (WhatsApp, dll) — konten immutable, bahasa fresh
+ * hanya berlaku untuk konten baru.
  */
 
 import type { ReminderPresetSlug } from "@/lib/reminder-presets";
@@ -31,7 +42,7 @@ export type NotificationCopyKind = "mendekati" | "terlewat";
 export type CopyContext = {
   kind: NotificationCopyKind;
   presetSlug?: ReminderPresetSlug | string | null;
-  /** Short label for the part being reminded — falls through to "servis" if unset. */
+  /** Short label for the part being reminded — falls through to preset noun fallback jika tidak diset. */
   presetLabel?: string;
   /** Display name of the vehicle. Empty/undefined → omit personalization. */
   vehicleName?: string | null;
@@ -52,123 +63,24 @@ export type CopyContext = {
 
 export type Copy = { title: string; body: string };
 
-/* ──────────────────────────────────────────────────────────────────
- * Title pools
- *
- * Title is short, focused on intent. Personalization happens in the body
- * because vehicle names can be long enough to blow the 40-char budget.
- * ──────────────────────────────────────────────────────────────── */
+/**
+ * Signature untuk translator function yang di-pass dari caller. Sengaja
+ * loose (`string` key) supaya module ini tidak coupling ke `TranslationKey`
+ * union type dari `@/lib/i18n`. Cast dilakukan di caller.
+ */
+export type TranslateFn = (
+  key: string,
+  params?: Record<string, string | number>,
+) => string;
 
-const TITLES: Record<NotificationCopyKind, readonly string[]> = {
-  mendekati: ["Servis sebentar lagi", "Hampir waktunya servis", "Bersiap untuk servis"],
-  terlewat: ["Sudah waktunya servis", "Servis sudah lewat", "Motor butuh perhatian"],
-};
-
-/* ──────────────────────────────────────────────────────────────────
- * Body templates
- *
- * Templates are factory functions so we can interpolate numbers cleanly
- * AND skip variants that don't apply (e.g. "X km lagi" when only `days` is
- * available). The picker filters out null returns before randomizing.
- * ──────────────────────────────────────────────────────────────── */
-
-type BodyFactory = (ctx: CopyContext) => string | null;
-
-function withSubject(ctx: CopyContext): string {
-  // "Scoopy" > "Motor kamu" > generic "Servis"
-  const v = (ctx.vehicleName ?? "").trim();
-  return v.length > 0 ? v : "Motor kamu";
-}
-
-function presetNoun(ctx: CopyContext): string {
-  // Used as the "thing" in body text. Fallback "servis rutin" sounds
-  // natural when slug is unknown.
-  const slug = ctx.presetSlug ?? "";
-  if (slug === "oil_change") return "ganti oli";
-  if (slug === "regular_service") return "servis rutin";
-  if (slug === "cvt") return "servis CVT";
-  if (slug === "brake") return "ganti kampas rem";
-  if (slug === "battery") return "ganti aki";
-  return ctx.presetLabel?.toLowerCase() ?? "servis";
-}
-
-const MENDEKATI_BODIES: readonly BodyFactory[] = [
-  // KM-flavored (only when remainingKm > 0)
-  (c) => {
-    if (typeof c.remainingKm !== "number" || c.remainingKm <= 0) return null;
-    const noun = presetNoun(c);
-    return `${capitalizeFirst(noun)} sekitar ${c.remainingKm.toLocaleString("id-ID")} km lagi`;
-  },
-  (c) => {
-    if (typeof c.remainingKm !== "number" || c.remainingKm <= 0) return null;
-    return `Tinggal ${c.remainingKm.toLocaleString("id-ID")} km lagi sebelum ${presetNoun(c)}`;
-  },
-  // Days-flavored
-  (c) => {
-    if (typeof c.remainingDays !== "number" || c.remainingDays <= 0) return null;
-    return `${capitalizeFirst(presetNoun(c))} dijadwalkan ${c.remainingDays} hari lagi`;
-  },
-  // Personalized (only when vehicleName present)
-  (c) => {
-    const v = (c.vehicleName ?? "").trim();
-    if (!v) return null;
-    return `${v} hampir waktunya ${presetNoun(c)}`;
-  },
-  // Generic fallback (always usable)
-  (c) => `Siap-siap untuk ${presetNoun(c)} ${withSubject(c).toLowerCase() === "motor kamu" ? "motor" : withSubject(c)}`,
-];
-
-const TERLEWAT_BODIES: readonly BodyFactory[] = [
-  (c) => {
-    // remainingKm is negative when overdue
-    if (typeof c.remainingKm !== "number" || c.remainingKm >= 0) return null;
-    const past = Math.abs(c.remainingKm);
-    return `${capitalizeFirst(presetNoun(c))} sudah lewat ${past.toLocaleString("id-ID")} km`;
-  },
-  (c) => {
-    if (typeof c.remainingDays !== "number" || c.remainingDays >= 0) return null;
-    const past = Math.abs(c.remainingDays);
-    return `${capitalizeFirst(presetNoun(c))} terlewat ${past} hari`;
-  },
-  (c) => {
-    const v = (c.vehicleName ?? "").trim();
-    if (!v) return null;
-    return `${v} sudah waktunya ${presetNoun(c)}`;
-  },
-  (c) => `${capitalizeFirst(presetNoun(c))} sudah lewat — sebaiknya segera dijadwalkan`,
-];
+/** Locale-aware number formatter. Signature identik dengan `useI18n().formatNumber`. */
+export type NumberFormatFn = (
+  n: number,
+  opts?: Intl.NumberFormatOptions,
+) => string;
 
 /* ──────────────────────────────────────────────────────────────────
- * Picker
- * ──────────────────────────────────────────────────────────────── */
-
-export function pickCopy(ctx: CopyContext): Copy {
-  const titles = TITLES[ctx.kind];
-  const bodyPool = ctx.kind === "mendekati" ? MENDEKATI_BODIES : TERLEWAT_BODIES;
-
-  const seed = ctx.seed ?? `${ctx.presetSlug ?? "?"}:${ctx.kind}`;
-  const titleIdx = stableIndex(seed + ":t", titles.length);
-  const title = clamp(titles[titleIdx] ?? titles[0], 40);
-
-  // Filter out templates that returned null (lacked data they needed),
-  // then pick a stable variant. If everything filters out (shouldn't —
-  // last entry of each pool is always usable), fall back to a static line.
-  const candidates: string[] = [];
-  for (const fn of bodyPool) {
-    const out = fn(ctx);
-    if (typeof out === "string" && out.length > 0) candidates.push(out);
-  }
-  const bodyIdx = candidates.length ? stableIndex(seed + ":b", candidates.length) : 0;
-  const body = clamp(
-    candidates[bodyIdx] ?? `Yuk cek ${withSubject(ctx).toLowerCase()} sekarang`,
-    80,
-  );
-
-  return { title, body };
-}
-
-/* ──────────────────────────────────────────────────────────────────
- * Helpers
+ * Helpers — internal utilities
  * ──────────────────────────────────────────────────────────────── */
 
 function capitalizeFirst(s: string): string {
@@ -193,4 +105,172 @@ function stableIndex(s: string, mod: number): number {
   let h = 5381;
   for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
   return Math.abs(h) % mod;
+}
+
+/**
+ * Resolve preset slug → localized noun ("oil change" vs "ganti oli"). Kalau
+ * slug tidak dikenali, fallback ke `presetLabel` (dari DB, biasanya
+ * Indonesian) atau ke locale "fallback" key. Case: lowercase — caller
+ * pakai `capitalizeFirst` kalau butuh capital di awal kalimat.
+ */
+function resolvePresetNoun(ctx: CopyContext, t: TranslateFn): string {
+  const slug = (ctx.presetSlug ?? "").toString();
+  const map: Record<string, string> = {
+    oil_change: "notifications.copy.presetNouns.oilChange",
+    regular_service: "notifications.copy.presetNouns.regularService",
+    cvt: "notifications.copy.presetNouns.cvt",
+    brake: "notifications.copy.presetNouns.brake",
+    battery: "notifications.copy.presetNouns.battery",
+  };
+  const key = map[slug];
+  if (key) return t(key);
+  // Preset label dari DB — biasanya sudah dalam bahasa yang cocok, jadi
+  // kita respect. Kalau kosong, fallback ke locale fallback.
+  return ctx.presetLabel?.toLowerCase() ?? t("notifications.copy.presetNouns.fallback");
+}
+
+/* ──────────────────────────────────────────────────────────────────
+ * Picker (main entry)
+ * ──────────────────────────────────────────────────────────────── */
+
+/**
+ * Pilih title + body untuk notifikasi berdasarkan `ctx`. `t` +
+ * `formatNumber` di-inject supaya module ini pure/testable (tidak
+ * bergantung ke React context langsung).
+ *
+ * Pool titles (3 per kind) selalu ada — deterministic pick via seed hash.
+ * Pool bodies bisa filter berdasarkan available data (mis. `mendekatiKm1`
+ * skip kalau `remainingKm` undefined), lalu pick dari yang tersisa.
+ */
+export function pickCopy(
+  ctx: CopyContext,
+  t: TranslateFn,
+  formatNumber: NumberFormatFn,
+): Copy {
+  // Precompute reusable substitution values ------------------------------
+  const preset = resolvePresetNoun(ctx, t);
+  const presetCap = capitalizeFirst(preset);
+
+  const vehicleName = (ctx.vehicleName ?? "").trim();
+  const hasVehicleName = vehicleName.length > 0;
+
+  // Subject variants — dipakai di beberapa template.
+  //  • `subject` (sentence-start or standalone): vehicle name OR "Motor kamu" / "Your bike"
+  //  • `subjectLower` (mid-sentence): same but lowercase-safe untuk fallback
+  //  • `subjectGeneric` (in mendekatiGeneric): vehicle name OR "motor" / "bike"
+  //    (kurangi pronoun repetition "Siap-siap untuk servis motor kamu" → "…motor")
+  const subjectLower = hasVehicleName
+    ? vehicleName
+    : t("notifications.copy.subject.fallbackLower");
+  const subjectGeneric = hasVehicleName
+    ? vehicleName
+    : t("notifications.copy.subject.generic");
+
+  const seed = ctx.seed ?? `${ctx.presetSlug ?? "?"}:${ctx.kind}`;
+
+  // Title picker ---------------------------------------------------------
+  const titleKeys: readonly string[] =
+    ctx.kind === "mendekati"
+      ? [
+          "notifications.copy.titles.mendekati1",
+          "notifications.copy.titles.mendekati2",
+          "notifications.copy.titles.mendekati3",
+        ]
+      : [
+          "notifications.copy.titles.terlewat1",
+          "notifications.copy.titles.terlewat2",
+          "notifications.copy.titles.terlewat3",
+        ];
+  const titleIdx = stableIndex(seed + ":t", titleKeys.length);
+  const title = clamp(t(titleKeys[titleIdx] ?? titleKeys[0]), 40);
+
+  // Body pool — factory functions supaya bisa filter berdasarkan data
+  // availability sebelum pick.
+  // ---------------------------------------------------------------------
+  type BodyFn = () => string | null;
+  const mendekatiPool: readonly BodyFn[] = [
+    // KM-flavored variant 1 — starts with preset (capitalized).
+    () => {
+      if (typeof ctx.remainingKm !== "number" || ctx.remainingKm <= 0) return null;
+      return t("notifications.copy.bodies.mendekatiKm1", {
+        preset: presetCap,
+        km: formatNumber(ctx.remainingKm),
+      });
+    },
+    // KM-flavored variant 2 — inverted order, preset mid-sentence.
+    () => {
+      if (typeof ctx.remainingKm !== "number" || ctx.remainingKm <= 0) return null;
+      return t("notifications.copy.bodies.mendekatiKm2", {
+        km: formatNumber(ctx.remainingKm),
+        preset,
+      });
+    },
+    // Days-flavored.
+    () => {
+      if (typeof ctx.remainingDays !== "number" || ctx.remainingDays <= 0) return null;
+      return t("notifications.copy.bodies.mendekatiDays", {
+        preset: presetCap,
+        days: ctx.remainingDays,
+      });
+    },
+    // Personalized (only when vehicle name present).
+    () => {
+      if (!hasVehicleName) return null;
+      return t("notifications.copy.bodies.mendekatiPersonal", {
+        vehicle: vehicleName,
+        preset,
+      });
+    },
+    // Generic fallback — always usable.
+    () =>
+      t("notifications.copy.bodies.mendekatiGeneric", {
+        preset,
+        subject: subjectGeneric,
+      }),
+  ];
+
+  const terlewatPool: readonly BodyFn[] = [
+    // KM overdue — `remainingKm` is negative when overdue.
+    () => {
+      if (typeof ctx.remainingKm !== "number" || ctx.remainingKm >= 0) return null;
+      return t("notifications.copy.bodies.terlewatKm", {
+        preset: presetCap,
+        km: formatNumber(Math.abs(ctx.remainingKm)),
+      });
+    },
+    // Days overdue.
+    () => {
+      if (typeof ctx.remainingDays !== "number" || ctx.remainingDays >= 0) return null;
+      return t("notifications.copy.bodies.terlewatDays", {
+        preset: presetCap,
+        days: Math.abs(ctx.remainingDays),
+      });
+    },
+    // Personalized.
+    () => {
+      if (!hasVehicleName) return null;
+      return t("notifications.copy.bodies.terlewatPersonal", {
+        vehicle: vehicleName,
+        preset,
+      });
+    },
+    // Generic — always usable.
+    () => t("notifications.copy.bodies.terlewatGeneric", { preset: presetCap }),
+  ];
+
+  const bodyPool = ctx.kind === "mendekati" ? mendekatiPool : terlewatPool;
+
+  const candidates: string[] = [];
+  for (const fn of bodyPool) {
+    const out = fn();
+    if (typeof out === "string" && out.length > 0) candidates.push(out);
+  }
+  const bodyIdx = candidates.length ? stableIndex(seed + ":b", candidates.length) : 0;
+  const body = clamp(
+    candidates[bodyIdx] ??
+      t("notifications.copy.bodies.fallback", { subject: subjectLower }),
+    80,
+  );
+
+  return { title, body };
 }

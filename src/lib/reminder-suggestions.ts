@@ -43,7 +43,10 @@ export type SuggestionSource = "history" | "fallback" | "none";
 
 /**
  * Structured note yang caller render via `t()`. `key` menunjuk ke locale
- * entry, `vars` sudah pre-formatted string (angka sudah `.toLocaleString()`).
+ * entry, `vars` berisi *raw* values — angka di-format otomatis oleh
+ * `t()` di `interpolate` (Intl.NumberFormat pakai locale aktif). Ini
+ * memastikan pengguna EN lihat "12,500 km" dan ID lihat "12.500 km"
+ * tanpa suggestion function perlu tahu locale.
  *
  * Kalau ada `partKey`, caller wajib translate dulu (`t(partKey)`) lalu isi
  * ke `vars.part` sebelum panggil `t(key, vars)`. Ini karena `computeXxx`
@@ -147,6 +150,11 @@ export function computeKmSuggestion({
   }
 
   // ── oil_change: prefer category interval (real per-merk data) ─────
+  //
+  // `noteI18n.vars` pakai *raw numbers* — `t()` auto-format via
+  // Intl.NumberFormat berdasarkan locale user (id/en). `note` (legacy
+  // string) tetap pre-format id-ID untuk backward compat kalau ada
+  // caller lama yang belum migrate ke `noteI18n`.
   if (preset.slug === "oil_change") {
     const lastEngine = pickLatestEngineOil([...records]);
     const intervalFromCat = category ? engineIntervalMid(category) : null;
@@ -167,7 +175,7 @@ export function computeKmSuggestion({
           note: `Sudah lewat — set ulang ${intervalStr} km dari sekarang`,
           noteI18n: {
             key: "reminderSuggestion.oilChangeOverdue",
-            vars: { interval: intervalStr },
+            vars: { interval },
           },
         };
       }
@@ -178,7 +186,7 @@ export function computeKmSuggestion({
         note: `Oli mesin terakhir di ${lastKmStr} km · interval ${intervalStr} km`,
         noteI18n: {
           key: "reminderSuggestion.oilChangeHistory",
-          vars: { km: lastKmStr, interval: intervalStr },
+          vars: { km: lastEngine.km, interval },
         },
       };
     }
@@ -232,7 +240,8 @@ export function computeKmSuggestion({
         note: `${partLabel} sudah lewat interval — set ulang ${intervalStr} km dari sekarang`,
         noteI18n: {
           key: "reminderSuggestion.partOverdue",
-          vars: { part: partLabel, interval: intervalStr },
+          // Raw numbers untuk `interval` — auto-format via `t()`.
+          vars: { part: partLabel, interval },
           partKey,
         },
       };
@@ -244,7 +253,8 @@ export function computeKmSuggestion({
       note: `${partLabel} terakhir di ${lastKmStr} km · interval ${intervalStr} km`,
       noteI18n: {
         key: "reminderSuggestion.partHistory",
-        vars: { part: partLabel, km: lastKmStr, interval: intervalStr },
+        // Raw numbers untuk `km` & `interval` — auto-format via `t()`.
+        vars: { part: partLabel, km: latest.km, interval },
         partKey,
       },
     };

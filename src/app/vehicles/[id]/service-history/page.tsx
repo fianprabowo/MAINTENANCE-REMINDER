@@ -23,6 +23,7 @@ import type { ServicePartLine, ServiceRecord, VehicleDetail } from "@/lib/types"
 import { DetailSkeleton } from "@/components/LoadingSkeleton";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import SwipeableRow from "@/components/SwipeableRow";
+import { Button, IconButton, Modal, SectionLabel, TextInput } from "@/components/ui";
 import { partKindsForChips, type PartKind } from "@/lib/part-kinds";
 import type { NotaScanResult } from "@/lib/nota-normalize";
 import { NotaScanError, scanNotaFromFile } from "@/lib/nota-scan";
@@ -214,17 +215,16 @@ function splitOilFromParts(parts: ServicePartLine[]): {
   return { enginePrice, gearboxPrice, remaining };
 }
 
-/** Interaksi ringan — dipakai di tombol halaman ini */
+/** Interaksi ringan — dipakai di tombol kontekstual (chip, link, tile). */
 const btnPress = "transition-all duration-150 active:scale-95";
-const btnDisabled = "disabled:pointer-events-none disabled:opacity-50";
 
 /**
  * Set chip Quick-Add. Disusun module-level supaya stabil identitasnya
  * (tidak re-create per render) dan mudah ditambah/diubah satu tempat.
  */
-/** Field input filled-style — single source kelas supaya konsisten lintas form. */
-const inputClass =
-  "w-full rounded-xl bg-(--color-bg) px-4 py-3 text-sm text-(--color-text) outline-none placeholder:text-(--color-text-muted)/80 ring-1 ring-(--color-border)/40 focus:ring-2 focus:ring-(--color-primary)/40 transition-all duration-150";
+/** Textarea — native element, harmonized dengan TextInput tokens. */
+const textareaClass =
+  "w-full resize-none rounded-3xl border border-transparent bg-(--color-surface-alt) px-5 py-4 text-sm text-(--color-text) outline-none transition-colors placeholder:text-(--color-text-muted) focus:border-(--color-text)/20 disabled:opacity-60";
 
 /**
  * CTA "Tambah servis" — pakai pola dashed-border tile yang sama dengan
@@ -281,6 +281,44 @@ function AddServiceButton({
         →
       </span>
     </button>
+  );
+}
+
+function BackArrowIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+    >
+      <line x1="19" y1="12" x2="5" y2="12" />
+      <polyline points="12 19 5 12 12 5" />
+    </svg>
+  );
+}
+
+function CloseIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+    >
+      <line x1="6" y1="6" x2="18" y2="18" />
+      <line x1="6" y1="18" x2="18" y2="6" />
+    </svg>
   );
 }
 
@@ -882,24 +920,6 @@ export default function ServiceHistoryPage() {
     return () => window.clearTimeout(t);
   }, [addModalOpen]);
 
-  useEffect(() => {
-    if (!addModalOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") closeAddModal();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [addModalOpen, closeAddModal]);
-
-  useEffect(() => {
-    if (!addModalOpen && !selectedRecord) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [addModalOpen, selectedRecord]);
-
   const closeDetailSheet = useCallback(() => {
     detailDragRef.current = null;
     setDetailDragging(false);
@@ -1212,13 +1232,15 @@ export default function ServiceHistoryPage() {
           dalam visible area (bukan di balik nav). Sama dengan layout di
           Overview page. */}
       <main className="flex flex-1 flex-col px-4 pb-32 pt-5 sm:px-6">
-        <button
-          type="button"
+        <IconButton
+          label={t("serviceHistory.backToDetail")}
+          variant="ghost"
+          size="lg"
           onClick={() => router.push(`/vehicles/${id}`)}
-          className={`mb-4 self-start rounded-lg px-1 py-0.5 text-sm font-semibold text-(--color-text-secondary) hover:bg-(--color-surface) hover:text-(--color-text) ${btnPress}`}
+          className="mb-4 self-start"
         >
-          {t("serviceHistory.backToDetail")}
-        </button>
+          <BackArrowIcon className="h-5 w-5" />
+        </IconButton>
 
         {loading || !detail ? (
           <DetailSkeleton />
@@ -1255,7 +1277,7 @@ export default function ServiceHistoryPage() {
                   className="group flex w-full max-w-[280px] flex-col items-center rounded-[1.75rem] border border-(--color-border) bg-(--color-surface) p-6 pb-7 text-center shadow-sm ring-1 ring-black/[0.03] transition-all hover:border-(--color-primary)/35 hover:shadow-md hover:ring-(--color-primary)/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-primary) focus-visible:ring-offset-2 focus-visible:ring-offset-(--color-bg) active:scale-[0.98] dark:ring-white/[0.04]"
                 >
                   <div className="mb-5 flex h-[7.25rem] w-full max-w-[200px] items-center justify-center rounded-2xl border-2 border-dashed border-(--color-primary)/35 bg-(--color-primary-soft) transition-colors group-hover:border-(--color-primary)/55 group-hover:bg-(--color-primary)/15">
-                    <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-(--color-primary) text-white shadow-lg shadow-(--color-primary)/35 transition-transform group-hover:scale-105 group-active:scale-95">
+                    <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-(--color-primary) text-(--color-bg) shadow-lg shadow-(--color-primary)/35 transition-transform group-hover:scale-105 group-active:scale-95">
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
                         viewBox="0 0 24 24"
@@ -1287,7 +1309,7 @@ export default function ServiceHistoryPage() {
               </div>
             ) : (
               <section className="space-y-4">
-                <h2 className="text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)">{t("serviceHistory.listHeading")}</h2>
+                <SectionLabel as="h2">{t("serviceHistory.listHeading")}</SectionLabel>
                 <div role="list" className="flex flex-col gap-4">
                   {records.map((r) => {
                     const total = totalFromRecord(r);
@@ -1307,14 +1329,14 @@ export default function ServiceHistoryPage() {
                           role="listitem"
                           className="relative bg-(--color-surface) shadow-sm transition-shadow duration-200 hover:shadow-md"
                         >
-                          <button
-                            type="button"
+                          <IconButton
+                            label={t("serviceHistory.editService")}
+                            size="md"
                             onClick={() => openEditModal(r)}
-                            className={`absolute right-2 top-2 z-10 rounded-lg p-2 text-gray-400 transition-all duration-150 hover:bg-gray-100 hover:text-gray-600 dark:text-zinc-500 dark:hover:bg-zinc-800/90 dark:hover:text-zinc-300 ${btnPress}`}
-                            aria-label={t("serviceHistory.editService")}
+                            className="absolute right-2 top-2 z-10"
                           >
                             <PencilEditIcon className="h-5 w-5" />
-                          </button>
+                          </IconButton>
 
                           <div className="min-w-0 px-4 pb-3 pr-12 pt-3">
                             <div
@@ -1351,7 +1373,7 @@ export default function ServiceHistoryPage() {
                                 </p>
                               ) : null}
                               {total > 0 ? (
-                                <p className="mt-2 text-sm font-semibold tabular-nums text-sky-600 dark:text-sky-400">
+                                <p className="mt-2 text-sm font-semibold tabular-nums text-(--color-text)">
                                   {t("serviceHistory.total", { amount: formatIdr(total) })}
                                 </p>
                               ) : null}
@@ -1412,42 +1434,33 @@ export default function ServiceHistoryPage() {
         )}
       </main>
 
-      {addModalOpen ? (
-        <div
-          className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="add-service-title"
-        >
-          <button
-            type="button"
-            className="absolute inset-0 bg-black/40 transition-opacity duration-150 hover:bg-black/45"
-            aria-label={t("common.close")}
+      <Modal
+        open={addModalOpen}
+        onClose={closeAddModal}
+        variant="sheet"
+        ariaLabelledBy="add-service-title"
+        ariaBusy={saving}
+        dismissible={!saving}
+        contentClassName="max-h-[80dvh] flex flex-col overflow-hidden"
+      >
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-(--color-border)/60 px-5 py-4">
+          <div>
+            <h2 id="add-service-title" className="text-lg font-extrabold text-(--color-text)">
+              {editingId ? t("serviceHistory.modalEditTitle") : t("serviceHistory.modalAddTitle")}
+            </h2>
+            {detail ? (
+              <p className="mt-0.5 text-xs text-(--color-text-secondary)">{detail.vehicle.name}</p>
+            ) : null}
+          </div>
+          <IconButton
+            label={t("common.close")}
             onClick={closeAddModal}
-          />
-          {/* max-h 80dvh per spec ("Maks tinggi: 80% layar"). Modal pakai
-              shadow-2xl tanpa border supaya kesan ringan & modern. */}
-          <div className="relative z-10 flex max-h-[80dvh] w-full max-w-md flex-col overflow-hidden rounded-t-2xl bg-(--color-bg) shadow-2xl sm:mx-4 sm:rounded-2xl">
-            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-(--color-border)/60 px-5 py-4">
-              <div>
-                <h2 id="add-service-title" className="text-lg font-extrabold text-(--color-text)">
-                  {editingId ? t("serviceHistory.modalEditTitle") : t("serviceHistory.modalAddTitle")}
-                </h2>
-                {detail ? (
-                  <p className="mt-0.5 text-xs text-(--color-text-secondary)">{detail.vehicle.name}</p>
-                ) : null}
-              </div>
-              <button
-                type="button"
-                onClick={closeAddModal}
-                className={`rounded-lg p-2 text-(--color-text-muted) hover:bg-(--color-surface) hover:text-(--color-text) ${btnPress}`}
-                aria-label={t("common.close")}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5">
-                  <path d="M18 6 6 18M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
+            disabled={saving}
+            className="-mr-1 -mt-1"
+          >
+            <CloseIcon className="h-5 w-5" />
+          </IconButton>
+        </div>
 
             <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
               {/* space-y (bukan flex-col) supaya child tidak di-shrink saat scroll. */}
@@ -1480,15 +1493,11 @@ export default function ServiceHistoryPage() {
 
                 {/* Manual service info — secondary to AI result */}
                 <section className="space-y-3">
-                  <h3 className="text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)">
-                    {t("serviceHistory.serviceInformation")}
-                  </h3>
+                  <SectionLabel as="h3">{t("serviceHistory.serviceInformation")}</SectionLabel>
 
                   <div>
                     <div className="flex items-center justify-between gap-2">
-                      <label htmlFor="modal-km" className="text-[10px] font-bold text-(--color-text-muted)">
-                        {t("serviceHistory.odometer")}
-                      </label>
+                      <SectionLabel>{t("serviceHistory.odometer")}</SectionLabel>
                       {currentKm > 0 ? (
                         <button
                           type="button"
@@ -1504,8 +1513,8 @@ export default function ServiceHistoryPage() {
                         </button>
                       ) : null}
                     </div>
-                    <div className="relative mt-1.5">
-                      <input
+                    <div className="mt-1.5">
+                      <TextInput
                         ref={modalKmRef}
                         id="modal-km"
                         type="text"
@@ -1522,57 +1531,49 @@ export default function ServiceHistoryPage() {
                           if (/^\d$/.test(e.key)) return;
                           e.preventDefault();
                         }}
-                        aria-invalid={kmError !== null && form.mileage_at_service.trim() !== ""}
-                        className={`${inputClass} py-3.5 pr-12 text-base font-semibold tabular-nums ${
-                          kmError && form.mileage_at_service.trim() !== ""
-                            ? "ring-red-400 focus:ring-red-400/60"
-                            : ""
-                        }`}
+                        error={kmError !== null && form.mileage_at_service.trim() !== ""}
+                        className="text-base font-semibold tabular-nums"
                         placeholder={t("serviceHistory.kmPlaceholder")}
+                        trailingSlot={
+                          <span className="text-xs font-semibold uppercase tracking-wide text-(--color-text-muted)">
+                            km
+                          </span>
+                        }
                       />
-                      <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xs font-semibold uppercase tracking-wide text-(--color-text-muted)" aria-hidden>
-                        km
-                      </span>
                     </div>
                     {kmError && form.mileage_at_service.trim() !== "" ? (
-                      <p className="mt-1.5 text-[11px] font-semibold text-red-600 dark:text-red-400">{kmError}</p>
+                      <p className="mt-1.5 text-[11px] font-bold text-(--color-text)">{kmError}</p>
                     ) : null}
                   </div>
 
                   <div>
-                    <label className="text-[10px] font-bold text-(--color-text-muted)">{t("serviceHistory.date")}</label>
-                    <input
+                    <SectionLabel className="mb-1.5">{t("serviceHistory.date")}</SectionLabel>
+                    <TextInput
                       type="date"
                       required
                       value={form.serviced_at}
                       onChange={(e) => setForm({ ...form, serviced_at: e.target.value })}
-                      className={`${inputClass} mt-1.5`}
                     />
                   </div>
 
                   <div>
-                    <label htmlFor="modal-location" className="text-[10px] font-bold text-(--color-text-muted)">
-                      {t("serviceHistory.workshopLocation")}
-                    </label>
-                    <div className="relative mt-1.5">
-                      <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-(--color-text-muted)" aria-hidden>
+                    <SectionLabel className="mb-1.5">{t("serviceHistory.workshopLocation")}</SectionLabel>
+                    <TextInput
+                      id="modal-location"
+                      type="text"
+                      autoComplete="off"
+                      list="service-location-suggestions"
+                      value={form.location}
+                      onChange={(e) => setForm({ ...form, location: e.target.value })}
+                      maxLength={120}
+                      placeholder={t("serviceHistory.locationPlaceholder")}
+                      leadingIcon={
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" className="h-4 w-4">
                           <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 1 1 18 0z" />
                           <circle cx="12" cy="10" r="3" />
                         </svg>
-                      </span>
-                      <input
-                        id="modal-location"
-                        type="text"
-                        autoComplete="off"
-                        list="service-location-suggestions"
-                        value={form.location}
-                        onChange={(e) => setForm({ ...form, location: e.target.value })}
-                        maxLength={120}
-                        placeholder={t("serviceHistory.locationPlaceholder")}
-                        className={`${inputClass} pl-10`}
-                      />
-                    </div>
+                      }
+                    />
                     {locationSuggestions.length > 0 ? (
                       <datalist id="service-location-suggestions">
                         {locationSuggestions.map((loc) => (
@@ -1583,7 +1584,7 @@ export default function ServiceHistoryPage() {
                   </div>
 
                   <div>
-                    <span className="text-[10px] font-bold text-(--color-text-muted)">{t("serviceHistory.serviceType")}</span>
+                    <SectionLabel>{t("serviceHistory.serviceType")}</SectionLabel>
                     <div role="radiogroup" aria-label={t("serviceHistory.serviceTypeAria")} className="mt-2 flex flex-wrap gap-2">
                       {quickChips.map((c) => {
                         const isActive = activeChip === c.id;
@@ -1643,10 +1644,9 @@ export default function ServiceHistoryPage() {
                   {(form.changed_engine_oil || form.changed_gearbox_oil) && (
                     <div className="grid grid-cols-2 gap-2">
                       {form.changed_engine_oil ? (
-                        <div className="relative">
-                          <label className="mb-0.5 block text-[10px] font-bold text-(--color-text-muted)">{t("serviceHistory.engineOilPrice")}</label>
-                          <span className="pointer-events-none absolute left-2.5 top-[1.85rem] text-[10px] font-semibold text-(--color-text-muted)">Rp</span>
-                          <input
+                        <div>
+                          <SectionLabel className="mb-1.5">{t("serviceHistory.engineOilPrice")}</SectionLabel>
+                          <TextInput
                             ref={oilEnginePriceRef}
                             type="text"
                             inputMode="numeric"
@@ -1654,16 +1654,18 @@ export default function ServiceHistoryPage() {
                             onChange={(e) =>
                               setOilPrices((p) => ({ ...p, engine: digitsOnly(e.target.value, 12) }))
                             }
-                            className={`${inputClass} py-2 pl-7 pr-2 text-right tabular-nums`}
+                            className="text-right tabular-nums"
                             placeholder="0"
+                            leadingIcon={
+                              <span className="text-[10px] font-semibold text-(--color-text-muted)">Rp</span>
+                            }
                           />
                         </div>
                       ) : null}
                       {form.changed_gearbox_oil ? (
-                        <div className="relative">
-                          <label className="mb-0.5 block text-[10px] font-bold text-(--color-text-muted)">{t("serviceHistory.gearboxOilPrice")}</label>
-                          <span className="pointer-events-none absolute left-2.5 top-[1.85rem] text-[10px] font-semibold text-(--color-text-muted)">Rp</span>
-                          <input
+                        <div>
+                          <SectionLabel className="mb-1.5">{t("serviceHistory.gearboxOilPrice")}</SectionLabel>
+                          <TextInput
                             ref={oilGearboxPriceRef}
                             type="text"
                             inputMode="numeric"
@@ -1671,8 +1673,11 @@ export default function ServiceHistoryPage() {
                             onChange={(e) =>
                               setOilPrices((p) => ({ ...p, gearbox: digitsOnly(e.target.value, 12) }))
                             }
-                            className={`${inputClass} py-2 pl-7 pr-2 text-right tabular-nums`}
+                            className="text-right tabular-nums"
                             placeholder="0"
+                            leadingIcon={
+                              <span className="text-[10px] font-semibold text-(--color-text-muted)">Rp</span>
+                            }
                           />
                         </div>
                       ) : null}
@@ -1683,9 +1688,7 @@ export default function ServiceHistoryPage() {
                 {/* Service items — compact cards */}
                 <section className="space-y-3">
                   <div className="flex items-center justify-between gap-2">
-                    <h3 className="text-[10px] font-bold uppercase tracking-wider text-(--color-text-muted)">
-                      {t("serviceHistory.serviceItems")}
-                    </h3>
+                    <SectionLabel as="h3">{t("serviceHistory.serviceItems")}</SectionLabel>
                     <span className="text-[11px] font-semibold tabular-nums text-(--color-text-secondary)">
                       {t("serviceHistory.itemsCount", { n: normalizePartLines(partLines).length })}
                     </span>
@@ -1693,13 +1696,12 @@ export default function ServiceHistoryPage() {
 
                   <div className="relative">
                     <label className="sr-only" htmlFor="part-search">{t("serviceHistory.searchPart")}</label>
-                    <input
+                    <TextInput
                       id="part-search"
                       type="search"
                       value={partSearch}
                       onChange={(e) => setPartSearch(e.target.value)}
                       placeholder={t("serviceHistory.searchPartPlaceholder")}
-                      className={`${inputClass} py-2.5`}
                     />
                     {partSearch.trim().length > 0 ? (
                       <ul className="mt-1.5 max-h-40 overflow-y-auto rounded-xl bg-(--color-bg) p-1 shadow-md ring-1 ring-(--color-border)/50">
@@ -1752,8 +1754,10 @@ export default function ServiceHistoryPage() {
                   </div>
 
                   {partLines.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-(--color-border) bg-(--color-surface)/50 px-4 py-6 text-center">
-                      <p className="text-sm font-bold text-(--color-text)">{t("serviceHistory.noItemsYet")}</p>
+                    // Konsisten dengan inline empty state di condition +
+                    // notifications: border/60 + surface/50 + rounded-2xl.
+                    <div className="rounded-2xl border border-dashed border-(--color-border)/60 bg-(--color-surface)/50 px-4 py-6 text-center">
+                      <p className="text-sm font-semibold text-(--color-text)">{t("serviceHistory.noItemsYet")}</p>
                       <p className="mt-1 text-xs text-(--color-text-secondary)">
                         {t("serviceHistory.noItemsHint")}
                       </p>
@@ -1787,17 +1791,17 @@ export default function ServiceHistoryPage() {
                                     {totalNum > 0 ? ` · ${formatIdr(totalNum)}` : ""}
                                   </p>
                                 </button>
-                                <button
-                                  type="button"
+                                <IconButton
+                                  label={t("serviceHistory.deleteItem")}
+                                  size="sm"
                                   onClick={() => removePart(line.key)}
                                   disabled={isRemoving}
-                                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-(--color-text-muted) hover:text-red-500 ${btnPress}`}
-                                  aria-label={t("serviceHistory.deleteItem")}
+                                  className="shrink-0 text-(--color-text-muted) hover:text-(--color-text)"
                                 >
                                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
                                     <path d="M3 6h18M8 6V4h8v2m-9 4v10m10-10v10M10 11v6M14 11v6" strokeLinecap="round" />
                                   </svg>
-                                </button>
+                                </IconButton>
                               </div>
                             ) : (
                               <div className="space-y-2 p-3">
@@ -1809,15 +1813,16 @@ export default function ServiceHistoryPage() {
                                   >
                                     {t("serviceHistory.done")}
                                   </button>
-                                  <button
+                                  <Button
                                     type="button"
+                                    variant="destructive"
+                                    size="sm"
                                     onClick={() => removePart(line.key)}
-                                    className="text-[11px] font-semibold text-red-500"
                                   >
                                     {t("common.delete")}
-                                  </button>
+                                  </Button>
                                 </div>
-                                <input
+                                <TextInput
                                   type="text"
                                   value={line.name}
                                   onChange={(e) =>
@@ -1828,13 +1833,12 @@ export default function ServiceHistoryPage() {
                                     )
                                   }
                                   placeholder={t("serviceHistory.description")}
-                                  className={`${inputClass} px-3 py-2`}
                                   autoFocus
                                 />
                                 <div className="grid grid-cols-[4.5rem_minmax(0,1fr)_minmax(0,1fr)] gap-2">
                                   <div>
-                                    <label className="mb-0.5 block text-[10px] font-bold text-(--color-text-muted)">{t("serviceHistory.qty")}</label>
-                                    <input
+                                    <SectionLabel className="mb-1.5">{t("serviceHistory.qty")}</SectionLabel>
+                                    <TextInput
                                       type="text"
                                       inputMode="numeric"
                                       value={line.qty}
@@ -1852,38 +1856,38 @@ export default function ServiceHistoryPage() {
                                           ),
                                         );
                                       }}
-                                      className={`${inputClass} px-2 py-2 text-center tabular-nums`}
+                                      className="text-center tabular-nums"
                                     />
                                   </div>
                                   <div>
-                                    <label className="mb-0.5 block text-[10px] font-bold text-(--color-text-muted)">{t("serviceHistory.unitPrice")}</label>
-                                    <div className="relative">
-                                      <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-(--color-text-muted)">Rp</span>
-                                      <input
-                                        type="text"
-                                        inputMode="numeric"
-                                        value={formatThousandsId(line.unit_price, formatNumber)}
-                                        onChange={(e) => {
-                                          const unit_price = digitsOnly(e.target.value, 12);
-                                          setPartLines((rows) =>
-                                            rows.map((r) =>
-                                              r.key === line.key
-                                                ? {
-                                                    ...r,
-                                                    unit_price,
-                                                    price: derivedLineTotal(r.qty, unit_price, r.price),
-                                                  }
-                                                : r,
-                                            ),
-                                          );
-                                        }}
-                                        className={`${inputClass} py-2 pl-7 pr-2 text-right tabular-nums`}
-                                        placeholder="0"
-                                      />
-                                    </div>
+                                    <SectionLabel className="mb-1.5">{t("serviceHistory.unitPrice")}</SectionLabel>
+                                    <TextInput
+                                      type="text"
+                                      inputMode="numeric"
+                                      value={formatThousandsId(line.unit_price, formatNumber)}
+                                      onChange={(e) => {
+                                        const unit_price = digitsOnly(e.target.value, 12);
+                                        setPartLines((rows) =>
+                                          rows.map((r) =>
+                                            r.key === line.key
+                                              ? {
+                                                  ...r,
+                                                  unit_price,
+                                                  price: derivedLineTotal(r.qty, unit_price, r.price),
+                                                }
+                                              : r,
+                                          ),
+                                        );
+                                      }}
+                                      className="text-right tabular-nums"
+                                      placeholder="0"
+                                      leadingIcon={
+                                        <span className="text-[10px] font-semibold text-(--color-text-muted)">Rp</span>
+                                      }
+                                    />
                                   </div>
                                   <div>
-                                    <p className="mb-0.5 text-[10px] font-bold text-(--color-text-muted)">{t("serviceHistory.fieldTotal")}</p>
+                                    <SectionLabel className="mb-1.5">{t("serviceHistory.fieldTotal")}</SectionLabel>
                                     <p className="rounded-xl bg-(--color-surface-alt) px-2 py-2 text-right text-sm font-bold tabular-nums text-(--color-text-secondary) ring-1 ring-(--color-border)/40">
                                       {totalNum > 0 ? formatIdr(totalNum) : "—"}
                                     </p>
@@ -1910,12 +1914,12 @@ export default function ServiceHistoryPage() {
                   </button>
 
                   <div>
-                    <label className="text-[10px] font-bold text-(--color-text-muted)">{t("serviceHistory.notes")}</label>
+                    <SectionLabel className="mb-1.5">{t("serviceHistory.notes")}</SectionLabel>
                     <textarea
                       value={form.description}
                       onChange={(e) => setForm({ ...form, description: e.target.value })}
                       rows={2}
-                      className={`${inputClass} mt-1.5 resize-none`}
+                      className={textareaClass}
                       placeholder={t("serviceHistory.notesPlaceholder")}
                     />
                   </div>
@@ -1925,9 +1929,7 @@ export default function ServiceHistoryPage() {
               <div className="shrink-0 border-t border-(--color-border)/50 bg-(--color-bg) px-4 pt-3 pb-[max(1rem,calc(env(safe-area-inset-bottom,0px)+1rem))]">
                 <div className="mb-3 flex items-end justify-between gap-3">
                   <div>
-                    <p className="text-[10px] font-bold uppercase tracking-wide text-(--color-text-muted)">
-                      {t("serviceHistory.summary")}
-                    </p>
+                    <SectionLabel>{t("serviceHistory.summary")}</SectionLabel>
                     <p className="mt-0.5 text-xs font-semibold text-(--color-text-secondary)">
                       {t("serviceHistory.itemsDetected", { n: normalizePartLines(partLines).length })}
                     </p>
@@ -1944,46 +1946,39 @@ export default function ServiceHistoryPage() {
                     )}
                   </p>
                 </div>
-                <button
+                <Button
                   type="submit"
+                  variant="primary"
+                  size="lg"
+                  fullWidth
+                  loading={saving}
                   disabled={saveDisabled || ocrPhase === "processing"}
-                  className={`w-full rounded-xl bg-(--color-primary) py-3.5 text-sm font-bold text-white shadow-md shadow-(--color-primary)/25 transition-all duration-200 hover:brightness-110 hover:shadow-lg ${btnPress} ${btnDisabled}`}
                 >
                   {saving
                     ? t("vehicles.submitting")
                     : editingId
                       ? t("vehicles.submitSave")
                       : t("serviceHistory.saveService")}
-                </button>
+                </Button>
               </div>
             </form>
-          </div>
-        </div>
-      ) : null}
+      </Modal>
 
-      {selectedRecord ? (
+      <Modal
+        open={!!selectedRecord}
+        onClose={closeDetailSheet}
+        variant="sheet"
+        ariaLabelledBy="service-detail-title"
+        contentClassName="max-h-[80dvh] flex flex-col overflow-hidden border border-(--color-border) p-0"
+      >
+        {selectedRecord ? (
         <div
-          className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="service-detail-title"
+          className="flex min-h-0 flex-1 flex-col"
+          style={{
+            transform: `translateY(${detailDragY}px)`,
+            transition: detailDragging ? "none" : "transform 200ms ease-out",
+          }}
         >
-          <button
-            type="button"
-            className="absolute inset-0 bg-black/40 transition-opacity duration-150"
-            style={{
-              opacity: Math.max(0.08, 0.4 * (1 - Math.min(1, detailDragY / 260))),
-            }}
-            aria-label={t("common.close")}
-            onClick={closeDetailSheet}
-          />
-          <div
-            className="relative z-10 flex max-h-[80dvh] w-full max-w-md flex-col overflow-hidden rounded-t-2xl border border-(--color-border) bg-(--color-bg) shadow-2xl sm:mx-4 sm:rounded-2xl"
-            style={{
-              transform: `translateY(${detailDragY}px)`,
-              transition: detailDragging ? "none" : "transform 200ms ease-out",
-            }}
-          >
             {/* Handle + header: area drag untuk slide-down dismiss (mobile). */}
             <div
               className="shrink-0 touch-none border-b border-(--color-border)/60 pt-2 sm:pt-0"
@@ -2000,15 +1995,15 @@ export default function ServiceHistoryPage() {
                   {t("serviceHistory.detailTitle")}
                 </h3>
                 <div className="flex shrink-0 items-center gap-1.5">
-                  <button
-                    type="button"
+                  <IconButton
+                    label={t("serviceHistory.editHistoryAria")}
+                    variant="solid"
                     onClick={() => {
                       const r = selectedRecord;
                       closeDetailSheet();
                       openEditModal(r);
                     }}
-                    className={`flex h-9 w-9 items-center justify-center rounded-lg bg-(--color-primary-soft) text-(--color-primary) transition-colors duration-150 hover:brightness-95 ${btnPress}`}
-                    aria-label={t("serviceHistory.editHistoryAria")}
+                    className="bg-(--color-primary-soft) text-(--color-primary) hover:brightness-95"
                   >
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
@@ -2018,19 +2013,23 @@ export default function ServiceHistoryPage() {
                       strokeWidth="2"
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                      className="h-4.5 w-4.5"
+                      // `h-4.5 w-4.5` INVALID di Tailwind v4 default scale
+                      // (increment 0.5 hanya sampai 3.5). Pakai arbitrary
+                      // value `[1.125rem]` = 18px setara maksud awal.
+                      className="h-[1.125rem] w-[1.125rem]"
                       aria-hidden
                     >
                       <path d="M12 20h9" />
                       <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
                     </svg>
-                  </button>
-                  {/* Trash icon — soft red. Confirm via `pendingDeleteRecord`. */}
-                  <button
-                    type="button"
+                  </IconButton>
+                  <IconButton
+                    label={t("serviceHistory.deleteHistoryAria")}
                     onClick={() => requestDeleteRecord(selectedRecord)}
-                    className={`flex h-9 w-9 items-center justify-center rounded-lg bg-red-50 text-red-500 transition-colors duration-150 hover:bg-red-100 dark:bg-red-900/15 dark:text-red-400 dark:hover:bg-red-900/30 ${btnPress}`}
-                    aria-label={t("serviceHistory.deleteHistoryAria")}
+                    // Grayscale destructive icon button — hover ramps up
+                    // pakai text-inverted bg untuk "loud" affordance sebelum
+                    // ConfirmDialog muncul.
+                    className="bg-(--color-surface-alt) text-(--color-text-secondary) hover:bg-(--color-text) hover:text-(--color-bg)"
                   >
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
@@ -2040,12 +2039,14 @@ export default function ServiceHistoryPage() {
                       strokeWidth="2"
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                      className="h-4.5 w-4.5"
+                      // Same fix as edit-icon above — `h-4.5` invalid, pakai
+                      // arbitrary 18px untuk consistency.
+                      className="h-[1.125rem] w-[1.125rem]"
                       aria-hidden
                     >
                       <path d="M3 6h18M8 6V4h8v2m-9 4v10m10-10v10M10 11v6M14 11v6" />
                     </svg>
-                  </button>
+                  </IconButton>
                 </div>
               </div>
             </div>
@@ -2088,7 +2089,7 @@ export default function ServiceHistoryPage() {
                         {t("serviceHistory.fieldOilChange")}
                       </dt>
                       <dd className="mt-1.5">
-                        <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-bold text-amber-700 dark:text-amber-300">
+                        <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-(--color-text)/25 bg-(--color-surface-alt) px-2.5 py-1 text-[11px] font-bold text-(--color-text)">
                           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 shrink-0" aria-hidden>
                             <path d="M12 2v6M5 8a7 7 0 0 0 14 0M12 8v14" />
                           </svg>
@@ -2234,17 +2235,13 @@ export default function ServiceHistoryPage() {
             </div>
 
             <div className="shrink-0 border-t border-(--color-border)/60 px-5 py-4 pb-[max(1rem,calc(env(safe-area-inset-bottom,0px)+1rem))] sm:pb-4">
-              <button
-                type="button"
-                onClick={closeDetailSheet}
-                className={`w-full rounded-xl border border-(--color-border) bg-(--color-surface-alt) py-3 text-sm font-bold text-(--color-text) hover:bg-(--color-surface) ${btnPress}`}
-              >
+              <Button variant="secondary" size="lg" fullWidth onClick={closeDetailSheet}>
                 {t("common.close")}
-              </button>
+              </Button>
             </div>
-          </div>
         </div>
-      ) : null}
+        ) : null}
+      </Modal>
 
       <ConfirmDialog
         open={!!pendingDeleteRecord}

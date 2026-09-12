@@ -178,7 +178,10 @@ export default function SwipeableRow({
           type="button"
           onClick={handleAction}
           disabled={disabled || !isOpen}
-          className="flex h-full w-full flex-col items-center justify-center gap-1 bg-red-500 text-xs font-bold text-white transition-colors hover:bg-red-600 disabled:opacity-60"
+          // Grayscale delete action — inverted bg dengan brightness-95 on hover
+          // untuk "step back" affordance. Safeguard sebenarnya = swipe distance
+          // (user harus swipe deliberate) + label eksplisit di button.
+          className="flex h-full w-full flex-col items-center justify-center gap-1 bg-(--color-text) text-xs font-bold text-(--color-bg) transition-colors hover:brightness-95 disabled:opacity-60"
         >
           <TrashIcon className="h-5 w-5" />
           <span>{effectiveActionLabel}</span>

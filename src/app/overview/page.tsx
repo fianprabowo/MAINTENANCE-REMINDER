@@ -13,6 +13,7 @@ import { CardSkeleton } from "@/components/LoadingSkeleton";
 import SwipeableRow from "@/components/SwipeableRow";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import EmptyVehicleState from "@/components/EmptyVehicleState";
+import { SectionLabel } from "@/components/ui";
 import { useAppErrorMessage, useTranslation } from "@/lib/i18n";
 
 function PlusIcon({ className }: { className?: string }) {
@@ -138,7 +139,7 @@ export default function OverviewPage() {
           full viewport (which would put it behind the nav). */}
       <main className="flex flex-1 flex-col px-5 pb-32 pt-8">
         <div className="mb-6">
-          <p className="text-xs font-bold uppercase tracking-wider text-(--color-text-muted)">{t("overview.eyebrow")}</p>
+          <SectionLabel>{t("overview.eyebrow")}</SectionLabel>
           <h1 className="mt-1 text-2xl font-bold tracking-tight">{t("overview.title")}</h1>
           <p className="mt-1 text-sm text-(--color-text-secondary)">
             {t("overview.subtitle")}
@@ -163,8 +164,15 @@ export default function OverviewPage() {
                 </p>
               </div>
               <div className="rounded-2xl bg-(--color-surface) p-3 text-center shadow-sm">
+                {/*
+                  Stat "butuh perhatian" — urgency di-encode via visual weight
+                  (grayscale mode): >0 = full text + extra-bold, 0 = muted.
+                  Sebelumnya pakai --color-warning vs --color-good yang di
+                  grayscale-mode nilainya sangat berdekatan (mid-gray vs
+                  light-gray) — sulit dibaca. Sekarang perbedaannya jelas.
+                */}
                 <p
-                  className={`text-xl font-bold ${needsAttention > 0 ? "text-(--color-warning)" : "text-(--color-good)"}`}
+                  className={`text-xl ${needsAttention > 0 ? "font-black text-(--color-text)" : "font-bold text-(--color-text-muted)"}`}
                 >
                   {needsAttention}
                 </p>
@@ -202,9 +210,7 @@ export default function OverviewPage() {
             </Link>
 
             <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-(--color-text-muted)">
-                {t("overview.listTitle")}
-              </h2>
+              <SectionLabel as="h2">{t("overview.listTitle")}</SectionLabel>
               <span className="rounded-full bg-(--color-surface) px-2.5 py-0.5 text-[10px] font-bold text-(--color-text-muted)">
                 {totalVehicles}
               </span>

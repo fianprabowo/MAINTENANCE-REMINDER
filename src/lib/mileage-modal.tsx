@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useMemo, useState } from "react
 import { useRouter } from "next/navigation";
 import { useSelectedVehicle } from "@/lib/selected-vehicle";
 import { getLatestMileageKm } from "@/lib/supabase";
+import { useTranslation } from "@/lib/i18n";
 import AddMileageModal from "@/components/AddMileageModal";
 
 type MileageModalContextValue = {
@@ -21,6 +22,7 @@ export function useMileageModal() {
 
 export function MileageModalProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const { t } = useTranslation();
   const { selectedVehicleId, ready } = useSelectedVehicle();
   const [open, setOpen] = useState(false);
   const [vehicleId, setVehicleId] = useState("");
@@ -51,7 +53,8 @@ export function MileageModalProvider({ children }: { children: React.ReactNode }
         onClose={() => setOpen(false)}
         vehicleId={vehicleId}
         minMileage={minMileage}
-        title="Perbarui kilometer"
+        // Same key sebagai vehicle detail page — konsisten label "Update KM".
+        title={t("vehicleDetail.updateMileageTitle")}
         onSaved={async () => {
           if (typeof window !== "undefined") {
             window.dispatchEvent(new CustomEvent("mr:vehicle-data-changed"));

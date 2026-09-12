@@ -42,14 +42,6 @@ export function oilRemainingKm(
   return intervalMid - (currentKm - lastServiceKm);
 }
 
-export function formatIntervalRange(
-  min: number | null,
-  max: number | null,
-): string | null {
-  if (min == null || max == null) return null;
-  return `${min.toLocaleString()}–${max.toLocaleString()} km`;
-}
-
 export function engineIntervalMid(category: MotorcycleCategory): number | null {
   return intervalMidKm(category.engine_oil_km_min, category.engine_oil_km_max);
 }
