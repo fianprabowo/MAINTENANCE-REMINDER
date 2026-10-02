@@ -34,3 +34,9 @@ Thumbs.db
 tmp/
 temp/
 .cache/
+
+# Logo source (input scripts/process-logo.mjs) — hanya output PNG yang di-commit
+public/brand/risma-logo.source.*
+
+# TypeScript incremental build cache
+*.tsbuildinfo

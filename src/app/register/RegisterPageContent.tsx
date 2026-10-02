@@ -187,9 +187,9 @@ export default function RegisterPageContent() {
           <Image
             src="/brand/risma-logo.png"
             alt={t("login.brandTitle")}
-            width={1024}
-            height={682}
-            className="mb-4 h-auto w-48 dark:invert"
+            width={960}
+            height={141}
+            className="mb-4 h-auto w-56 dark:invert"
             priority
           />
           <SectionLabel className="text-balance">{t("login.brandFullName")}</SectionLabel>

@@ -111,6 +111,16 @@ const en = {
     contactSupport: "Contact support",
   },
 
+  /*
+   * Onboarding — 3-step auth flow (splash → onboarding → access).
+   * Value-prop copy sengaja singkat: headline + CTA saja. Konsisten
+   * dengan mobile-first pattern (Binance, Duolingo, dsb.).
+   */
+  onboarding: {
+    headline: "Ride worry-free, service on time.",
+    cta: "Get Started",
+  },
+
   register: {
     title: "Create Account",
     subtitle: "Start tracking your vehicle maintenance",
@@ -675,7 +685,7 @@ const en = {
     shortMonthHint: "Days 29–31 adjust automatically in shorter months",
     valueSourceAria: "Reminder value source",
     emptyTitle: "No reminders yet",
-    emptySubtitle: "Pick a preset (oil change, CVT, battery…) — we'll fill in the interval and date.",
+    emptySubtitle: "Select a preset (oil, CVT, battery…)",
     emptyCta: "+ Add reminder",
     emptyAria: "Add your first reminder",
   },

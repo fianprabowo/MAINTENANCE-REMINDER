@@ -16,14 +16,18 @@ interface StatusBadgeProps {
 //   • Color mode: green/amber/red semantic.
 // Critical pakai INVERTED chip bg (zone-alarm sebagai bg + color-bg text)
 // supaya menonjol seperti "loud" alarm — analog dengan red badge original.
+//
+// Pengecualian: `good` SELALU hijau (juga di grayscale mode) — keputusan
+// produk supaya status "OK" langsung terbaca positif. Warning/critical
+// tetap ikut mode.
 const statusConfig: Record<
   StatusBadgeProps["status"],
   { bg: string; text: string; dot: string; labelKey: TranslationKey }
 > = {
   good: {
-    bg: "bg-(--color-surface-alt)",
-    text: "text-(--color-text-secondary)",
-    dot: "bg-(--zone-safe)",
+    bg: "bg-green-100 dark:bg-green-500/15",
+    text: "text-green-700 dark:text-green-400",
+    dot: "bg-green-500 dark:bg-green-400",
     labelKey: "status.ok",
   },
   warning: {

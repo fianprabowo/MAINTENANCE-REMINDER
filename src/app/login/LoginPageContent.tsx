@@ -43,9 +43,9 @@ const MAX_ACCESS_CODE_LENGTH = 10;
 const SIMULATED_VERIFICATION_DELAY_MS = 200;
 
 /* ──────────────────────────────────────────────────────────────────
- * Brand — raster logo (JPEG). File di `public/brand/risma-logo.jpg`.
- * Container `rounded-3xl overflow-hidden` clip corners agar kelihatan
- * seperti brand plate yang disengaja (source image ber-bg hitam).
+ * Brand — RISMA wordmark, transparent PNG di `public/brand/risma-logo.png`
+ * (di-generate `scripts/process-logo.mjs`). Hitam di light mode,
+ * `dark:invert` → putih di dark mode.
  * ──────────────────────────────────────────────────────────────── */
 
 /* ──────────────────────────────────────────────────────────────────
@@ -276,9 +276,9 @@ export default function LoginPageContent() {
           <Image
             src="/brand/risma-logo.png"
             alt={t("login.brandTitle")}
-            width={1024}
-            height={682}
-            className="mb-4 h-auto w-48 dark:invert"
+            width={960}
+            height={141}
+            className="mb-4 h-auto w-56 dark:invert"
             priority
           />
           <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-balance text-(--color-text-muted)">

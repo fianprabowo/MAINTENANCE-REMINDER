@@ -97,6 +97,15 @@ const id: typeof en = {
     contactSupport: "Hubungi support",
   },
 
+  /*
+   * Onboarding — 3-step auth flow (splash → onboarding → access).
+   * Value-prop copy singkat: headline + CTA saja.
+   */
+  onboarding: {
+    headline: "Motor terawat, perjalanan tenang.",
+    cta: "Mulai",
+  },
+
   register: {
     title: "Buat Akun",
     subtitle: "Mulai pantau servis kendaraan Anda",
@@ -647,7 +656,7 @@ const id: typeof en = {
     shortMonthHint: "Tanggal 29–31 otomatis menyesuaikan saat bulan lebih pendek",
     valueSourceAria: "Sumber nilai reminder",
     emptyTitle: "Belum ada reminder",
-    emptySubtitle: "Pilih preset (Ganti oli, CVT, Aki…) — kami yang isi interval & tanggalnya.",
+    emptySubtitle: "Pilih preset (oli, CVT, aki…)",
     emptyCta: "+ Tambah Reminder",
     emptyAria: "Tambah reminder pertama",
   },
