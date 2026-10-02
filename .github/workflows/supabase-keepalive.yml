@@ -1,0 +1,38 @@
+# Ping Supabase berkala agar project free tier tidak di-pause karena tidak ada aktivitas selama 7 hari.
+# Cron `*/4` di field day-of-month jalan tgl 1, 5, 9, 13, 17, 21, 25, 29 → jeda maksimal 4 hari.
+#
+# Secrets yang dibutuhkan (Settings → Secrets and variables → Actions):
+#   SUPABASE_URL       — sama dengan NEXT_PUBLIC_SUPABASE_URL
+#   SUPABASE_ANON_KEY  — sama dengan NEXT_PUBLIC_SUPABASE_ANON_KEY
+name: Supabase keep-alive
+
+on:
+  schedule:
+    - cron: "0 1 */4 * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Query system_parameter
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "::error::Secret SUPABASE_URL / SUPABASE_ANON_KEY belum diset"
+            exit 1
+          fi
+          status=$(curl -sS -o response.json -w "%{http_code}" \
+            --retry 3 --retry-delay 10 \
+            "$SUPABASE_URL/rest/v1/system_parameter?select=key&limit=1" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY")
+          echo "HTTP $status"
+          cat response.json; echo
+          if [ "$status" -ne 200 ]; then
+            echo "::error::Supabase ping gagal (HTTP $status)"
+            exit 1
+          fi
